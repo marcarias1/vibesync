@@ -3,14 +3,29 @@
 El runner es agnóstico: recibe este dict de executors. En tests se sustituyen por
 funciones fake, así que aquí va la versión de producción.
 """
-from datetime import datetime, timezone
+import contextlib
+from datetime import datetime, timedelta, timezone
 
 from app.agent.recommend import filter_underground, semantic_search
 from app.agent.tools import build_match
-from app.enrich.commerciality import window_for_level
+from app.enrich.commerciality import commerciality_score, window_for_level
 from app.enrich.service import enrich_artist
 from app.enrich.taste import score_track
 from app.preferences import blocked_set, get_preferences
+
+_ENRICH_TTL = timedelta(days=30)
+
+
+def _is_stale(art: dict | None) -> bool:
+    """True si el artista no está o su enriquecimiento es viejo (> TTL) → re-enriquecer."""
+    if not art:
+        return True
+    ts = art.get("updated_at")
+    if not ts:
+        return True
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - ts) > _ENRICH_TTL
 
 
 def build_executors(db, embedder, user_id: str, *, lastfm=None, spotify=None, result_holder=None):
@@ -37,6 +52,16 @@ def build_executors(db, embedder, user_id: str, *, lastfm=None, spotify=None, re
         now = datetime.now(timezone.utc)
         return {"iso": now.isoformat(), "hour": now.hour, "weekday": now.strftime("%A")}
 
+    async def track_fame(args):
+        """¿Un tema es famoso o underground? (listeners de Last.fm a nivel track)."""
+        if lastfm is None:
+            return {"error": "Last.fm no configurado"}
+        info = await lastfm.track_info(args.artist, args.title)
+        listeners = info.get("listeners") or 0
+        score = commerciality_score(listeners)
+        label = "muy famoso" if score >= 70 else ("conocido" if score >= 45 else "underground")
+        return {"listeners": listeners, "fame_score": score, "label": label}
+
     async def user_prefs(args):
         p = await get_preferences(db, user_id)
         return {"underground_level": p.get("underground_level", 50),
@@ -57,7 +82,8 @@ def build_executors(db, embedder, user_id: str, *, lastfm=None, spotify=None, re
         blocked = blocked_set(prefs)
         down, up = window_for_level(prefs.get("underground_level", 50))
 
-        names = await lastfm.similar_artists(args.source_artist, limit=args.limit * 2)
+        # cap de candidatos a enriquecer → converge rápido y gasta menos Last.fm
+        names = (await lastfm.similar_artists(args.source_artist, limit=args.limit * 2))[:14]
         candidates = []
         for name in names:
             a = await enrich_artist(db, name, lastfm=lastfm, embedder=embedder)
@@ -121,11 +147,17 @@ def build_executors(db, embedder, user_id: str, *, lastfm=None, spotify=None, re
         for t in args.tracks:
             found = await spotify.search_track(t.artist, t.title) if spotify is not None else None
             art = await db["artists"].find_one({"name": t.artist}) if db is not None else None
+            if db is not None and lastfm is not None and _is_stale(art):
+                # no está o su info es vieja (TTL) → enriquece/refresca AL VUELO
+                with contextlib.suppress(Exception):
+                    art = await enrich_artist(db, t.artist, lastfm=lastfm, embedder=embedder) or art
             score = score_track(
                 {"artist": t.artist, "tags": (art or {}).get("tags", []),
                  "commerciality_score": (art or {}).get("commerciality_score")}, prefs) if prefs else None
             tracks.append({
-                "artist": t.artist, "title": t.title,
+                # usa el nombre RESUELTO de Spotify → muestra feats y título real
+                "artist": (found or {}).get("artist") or t.artist,
+                "title": (found or {}).get("name") or t.title,
                 "uri": (found or {}).get("uri"),
                 "cover_url": (found or {}).get("cover_url"),
                 "score": score,
@@ -136,14 +168,78 @@ def build_executors(db, embedder, user_id: str, *, lastfm=None, spotify=None, re
             result_holder["draft"] = {"name": args.playlist_name, "tracks": tracks, "not_found": misses}
         return {"proposed": len(tracks), "not_found": misses}
 
+    async def _resolve_toptrack(artist: str, exclude: set):
+        """Un top track del artista resoluble en Spotify y que no esté ya (excludes uris)."""
+        if lastfm is None:
+            return None
+        with contextlib.suppress(Exception):
+            for tt in await lastfm.top_tracks(artist, limit=4):
+                found = await spotify.search_track(tt["artist"], tt["name"]) if spotify is not None else None
+                uri = (found or {}).get("uri")
+                if uri and uri not in exclude:
+                    return {"artist": (found or {}).get("artist") or tt["artist"],
+                            "title": (found or {}).get("name") or tt["name"],
+                            "uri": uri, "cover_url": (found or {}).get("cover_url")}
+        return None
+
+    async def asegurar_playlist(args):
+        """Revisa el borrador propuesto y SUGIERE mejoras (no las aplica)."""
+        draft = (result_holder or {}).get("draft") or {}
+        tracks = draft.get("tracks", [])
+        not_found = draft.get("not_found", [])
+        have_artists = {(t.get("artist") or "").lower() for t in tracks}
+        exclude = {t.get("uri") for t in tracks if t.get("uri")}
+        suggestions: list[dict] = []
+
+        # 1) rellenar los temas que no se resolvieron en Spotify
+        for nf in not_found[:5]:
+            artist = nf.split(" - ")[0].strip()
+            alt = await _resolve_toptrack(artist, exclude)
+            if alt:
+                exclude.add(alt["uri"])
+                suggestions.append({"type": "fill",
+                                    "from": {"artist": artist, "title": nf.split(" - ", 1)[-1]},
+                                    "to": alt,
+                                    "reason": f"'{nf}' no se resolvió en Spotify; alternativa de {artist}."})
+
+        # 2) artistas que el usuario nombró y NO están en la playlist
+        for ra in (getattr(args, "requested_artists", None) or [])[:6]:
+            ra = (ra or "").strip()
+            if ra and ra.lower() not in have_artists:
+                alt = await _resolve_toptrack(ra, exclude)
+                if alt:
+                    exclude.add(alt["uri"])
+                    suggestions.append({"type": "add", "to": alt,
+                                        "reason": f"Pediste {ra} y no estaba en la playlist."})
+
+        # 3) reemplazar el tema más flojo (si su score es muy bajo)
+        scored = [t for t in tracks if t.get("score") is not None and t.get("uri")]
+        if scored:
+            worst = min(scored, key=lambda t: t["score"])
+            if worst["score"] < 40 and lastfm is not None:
+                with contextlib.suppress(Exception):
+                    for s in await lastfm.similar_artists(worst.get("artist", ""), limit=5):
+                        alt = await _resolve_toptrack(s, exclude)
+                        if alt:
+                            suggestions.append({"type": "replace",
+                                                "from": {"artist": worst.get("artist"), "title": worst.get("title"), "uri": worst.get("uri")},
+                                                "to": alt,
+                                                "reason": f"'{worst.get('title')}' tenía score bajo ({worst['score']}); alternativa más afín."})
+                            break
+        if result_holder is not None:
+            result_holder["suggestions"] = suggestions
+        return {"suggestions": len(suggestions), "detail": suggestions}
+
     return {
         "get_user_music_profile": user_profile,
         "search_tracks_database": search_tracks,
         "semantic_track_search": semantic,
         "get_temporal_context": temporal,
+        "get_track_fame": track_fame,
         "get_user_preferences": user_prefs,
         "find_similar_underground_tracks": similar_underground,
         "spotify_playlist_controller": playlist,
         "crear_playlist_spotify": crear_playlist,
         "proponer_playlist_draft": proponer_draft,
+        "asegurar_playlist": asegurar_playlist,
     }

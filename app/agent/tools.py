@@ -93,6 +93,15 @@ class CreatePlaylistArgs(BaseModel):
     tracks: list[TrackRef] = Field(..., min_length=1, max_length=50)
 
 
+class TrackFameArgs(BaseModel):
+    artist: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1)
+
+
+class EnsureArgs(BaseModel):
+    requested_artists: list[str] = Field(default_factory=list)
+
+
 def build_match(args: SearchTracksArgs) -> dict:
     """Construye un $match SOLO con campos whitelisted; regex escapado."""
     m: dict = {}
@@ -132,6 +141,16 @@ TOOL_SCHEMAS = [
     _fn("get_user_preferences",
         "Preferencias del usuario: nivel underground, artistas amados y VETADOS (no los propongas).",
         {"type": "object", "properties": {}}),
+    _fn("get_track_fame",
+        "Dice si un tema concreto es famoso o underground (listeners de Last.fm).",
+        {"type": "object", "properties": {"artist": {"type": "string"}, "title": {"type": "string"}},
+         "required": ["artist", "title"]}),
+    _fn("asegurar_playlist",
+        "Revisa el borrador propuesto y SUGIERE mejoras (rellenar los no encontrados en Spotify, "
+        "añadir artistas que el usuario nombró y falten, reemplazar temas flojos). NO modifica, solo sugiere.",
+        {"type": "object", "properties": {
+            "requested_artists": {"type": "array", "items": {"type": "string"},
+                                  "description": "Artistas que el usuario nombró explícitamente"}}}),
     _fn("spotify_playlist_controller", "Crea o sobrescribe una playlist en Spotify.",
         {"type": "object", "properties": {
             "playlist_name": {"type": "string"},
@@ -164,4 +183,6 @@ ARG_MODELS: dict[str, type[BaseModel]] = {
     "spotify_playlist_controller": PlaylistControllerArgs,
     "crear_playlist_spotify": CreatePlaylistArgs,
     "proponer_playlist_draft": CreatePlaylistArgs,
+    "get_track_fame": TrackFameArgs,
+    "asegurar_playlist": EnsureArgs,
 }

@@ -313,6 +313,84 @@
   .track-remove:hover{background:rgba(236,72,153,.28);color:#fff;transform:scale(1.08)}
   .track-remove:disabled{opacity:.4;cursor:not-allowed;transform:none}
 
+  /* Barra de score (indicador sutil dentro de la info del track) */
+  .track-score{display:flex;align-items:center;gap:8px;margin-top:6px}
+  .track-score .ts-bar{
+    flex:0 1 110px;height:5px;border-radius:999px;
+    background:rgba(255,255,255,.10);overflow:hidden;
+  }
+  .track-score .ts-bar>i{display:block;height:100%;border-radius:999px;transition:width .3s ease}
+  .track-score .ts-num{font-size:.72rem;font-weight:800;color:var(--text-dim);min-width:1.6em}
+
+  /* Contenedor de acciones de la tarjeta (play + feedback + quitar) */
+  .track-actions{display:flex;align-items:center;gap:7px;flex:0 0 auto}
+
+  /* Botón play / preview */
+  .track-play{
+    flex:0 0 auto;cursor:pointer;border:none;font:inherit;
+    width:36px;height:36px;border-radius:50%;position:relative;
+    display:flex;align-items:center;justify-content:center;
+    color:#c8ffd8;font-size:1rem;line-height:1;
+    background:rgba(29,185,84,.12);border:1px solid rgba(29,185,84,.35);
+    transition:background .16s ease,color .16s ease,transform .12s ease,opacity .16s ease;
+  }
+  .track-play:hover{background:rgba(29,185,84,.26);color:#fff;transform:scale(1.06)}
+  .track-play.playing{background:rgba(29,185,84,.34);color:#fff;border-color:rgba(29,185,84,.6)}
+  .track-play.no-preview{opacity:.4;filter:grayscale(.4)}
+  .track-play .pp-spin{
+    display:none;width:16px;height:16px;border-radius:50%;
+    border:2.4px solid rgba(200,255,216,.3);border-top-color:#c8ffd8;
+    animation:refineSpin .75s linear infinite;
+  }
+  .track-play.loading .pp-icon{display:none}
+  .track-play.loading .pp-spin{display:block}
+  @media (prefers-reduced-motion:reduce){ .track-play .pp-spin{animation:none} }
+
+  /* Botones de feedback 👍 / 👎 / 🚫 */
+  .track-fb{display:flex;align-items:center;gap:4px;flex:0 0 auto}
+  .track-fb .fb-btn{
+    cursor:pointer;border:none;font:inherit;
+    width:30px;height:30px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-size:.92rem;line-height:1;filter:grayscale(.5);opacity:.82;
+    background:rgba(255,255,255,.05);border:1px solid var(--glass-border);
+    transition:all .15s ease;
+  }
+  .track-fb .fb-btn:hover{filter:none;opacity:1;transform:scale(1.12);background:rgba(255,255,255,.1)}
+  .track-fb .fb-like.active{filter:none;opacity:1;background:rgba(29,185,84,.22);border-color:rgba(29,185,84,.55)}
+  .track-fb .fb-dislike.active{filter:none;opacity:1;background:rgba(245,158,11,.2);border-color:rgba(245,158,11,.5)}
+  .track-fb .fb-block.active{filter:none;opacity:1;background:rgba(236,72,153,.22);border-color:rgba(236,72,153,.55)}
+
+  /* Panel de sugerencias del DJ (glass, bajo el borrador) */
+  .suggestions{
+    margin:2px 0 20px;padding:16px 18px;border-radius:var(--radius);
+    background:linear-gradient(120deg,rgba(124,58,237,.15),rgba(29,185,84,.10));
+    border:1px solid var(--glass-border);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    box-shadow:var(--shadow);
+  }
+  .suggestions .sug-head{font-weight:850;font-size:1.05rem;margin-bottom:12px}
+  .sug-item{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:11px 13px;border-radius:var(--radius-sm);margin-bottom:9px;
+    background:var(--glass-bg);border:1px solid var(--glass-border);
+  }
+  .sug-item:last-child{margin-bottom:0}
+  .sug-item .sug-icon{flex:0 0 auto;font-size:1.2rem;line-height:1}
+  .sug-item .sug-body{flex:1;min-width:150px}
+  .sug-item .sug-text{font-weight:700;font-size:.96rem}
+  .sug-item .sug-reason{color:var(--text-dim);font-size:.84rem;margin-top:2px}
+  .sug-item .sug-acts{display:flex;gap:8px;flex:0 0 auto}
+  .sug-btn{
+    cursor:pointer;border:none;font:inherit;font-weight:700;font-size:.85rem;
+    padding:8px 14px;border-radius:999px;transition:transform .15s ease,filter .18s ease,background .16s ease,border-color .16s ease;
+  }
+  .sug-apply{color:#04240f;background:linear-gradient(180deg,#25d366,var(--spotify));
+    box-shadow:0 6px 16px -6px rgba(29,185,84,.6)}
+  .sug-apply:hover{filter:brightness(1.07);transform:translateY(-1px)}
+  .sug-discard{color:#fff;background:rgba(255,255,255,.06);border:1px solid var(--glass-border)}
+  .sug-discard:hover{background:rgba(236,72,153,.16);border-color:var(--magenta)}
+
   /* Aviso de temas no encontrados */
   .not-found{
     margin:4px 0 16px;padding:10px 14px;border-radius:var(--radius-sm);
@@ -364,6 +442,44 @@
   .search-res-info .sr-sep{color:var(--text-dim);margin:0 5px}
   .search-res-info .sr-title{color:var(--text-dim)}
   .search-state{padding:12px 14px;color:var(--text-dim);font-size:.88rem;text-align:center}
+
+  /* Barra de refine conversacional (afinar el borrador en lenguaje natural) */
+  .refine-bar{
+    display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+    margin:0 0 18px;padding:14px 16px;
+    background:linear-gradient(120deg,rgba(124,58,237,.16),rgba(236,72,153,.12));
+    border:1px solid var(--glass-border);border-radius:var(--radius-sm);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  }
+  .refine-bar input{
+    flex:1;min-width:180px;
+    background:rgba(0,0,0,.28);border:1px solid var(--glass-border);
+    border-radius:999px;color:var(--text);padding:12px 18px;font:inherit;font-size:.96rem;
+    transition:border-color .2s ease,box-shadow .2s ease;
+  }
+  .refine-bar input::placeholder{color:#8c81a0}
+  .refine-bar input:focus{outline:none;border-color:rgba(236,72,153,.6);
+    box-shadow:0 0 0 3px rgba(236,72,153,.16)}
+  .btn-refine{
+    color:#fff;background:linear-gradient(180deg,#a855f7,var(--morado));
+    box-shadow:0 8px 22px -8px rgba(124,58,237,.7);white-space:nowrap;
+    display:inline-flex;align-items:center;gap:8px;
+  }
+  .btn-refine:hover{filter:brightness(1.08);box-shadow:0 12px 28px -8px rgba(124,58,237,.85)}
+  .refine-bar.busy input{opacity:.6}
+  /* Estado de carga del refine (spinner inline + texto rotando) */
+  .refine-status{
+    display:none;align-items:center;gap:11px;width:100%;margin-top:4px;
+    color:var(--text-dim);font-size:.9rem;font-weight:600;
+  }
+  .refine-status.on{display:flex}
+  .refine-spinner{
+    flex:0 0 auto;width:20px;height:20px;border-radius:50%;
+    border:2.5px solid rgba(236,72,153,.25);border-top-color:var(--magenta);
+    animation:refineSpin .8s linear infinite;
+  }
+  @keyframes refineSpin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){ .refine-spinner{animation:none} }
 
   /* Confirmar / publicar */
   .draft-confirm{display:flex;justify-content:center;margin:6px 0 22px}
@@ -429,6 +545,10 @@
     .actions{justify-content:stretch}
     .btn-generate,.btn-ghost{width:100%}
     .btn-publish{width:100%;justify-content:center}
+    /* En móvil la tarjeta envuelve: info arriba, acciones en su propia fila. */
+    .track-card{flex-wrap:wrap}
+    .track-actions{width:100%;justify-content:flex-end;margin-top:2px}
+    .sug-item .sug-acts{width:100%;justify-content:flex-end}
   }
 </style>
 
@@ -450,8 +570,8 @@
 
   <!-- ============ Hero ============ -->
   <section class="hero">
-    <h1>Tu DJ predictivo</h1>
-    <p>Describe tu vibe y te monto la playlist perfecta, evitando lo comercial. 🔮</p>
+    <h1>VibeSync Playlist</h1>
+    <p>Describe tu <bold>vibe</bold> y te monto la playlist perfecta, evitando lo comercial si no gustas.</p>
   </section>
 
   <!-- ============ Caja de prompt ============ -->
@@ -492,6 +612,18 @@
              autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false">
       <div class="search-dropdown" id="searchDropdown" role="listbox"></div>
     </div>
+
+    <div class="refine-bar" id="refineBar">
+      <input type="text" id="refineInput" autocomplete="off"
+             placeholder="Afínalo: 'quita las lentas, mete algo más oscuro'…">
+      <button class="btn btn-refine" id="refineBtn">🎚️ Afinar</button>
+      <div class="refine-status" id="refineStatus" role="status" aria-live="polite">
+        <span class="refine-spinner"></span>
+        <span id="refineStatusText">Afinando tu selección…</span>
+      </div>
+    </div>
+
+    <div class="suggestions" id="suggestionsPanel" style="display:none"><!-- sugerencias inyectadas por JS --></div>
 
     <div class="draft-confirm">
       <button class="btn btn-publish" id="publishBtn">✅ Crear en Spotify (0)</button>
@@ -566,7 +698,13 @@ const trackList    = $("#trackList");
 const searchAdd     = $("#searchAdd");
 const searchInput   = $("#searchInput");
 const searchDropdown= $("#searchDropdown");
+const refineBar    = $("#refineBar");
+const refineInput  = $("#refineInput");
+const refineBtn    = $("#refineBtn");
+const refineStatus = $("#refineStatus");
+const refineStatusText = $("#refineStatusText");
 const publishBtn   = $("#publishBtn");
+const suggestionsPanel = $("#suggestionsPanel");
 const draftPublished = $("#draftPublished");
 const draftMd      = $("#draftMd");
 
@@ -838,12 +976,14 @@ function setDraft(data, isDemo){
     name: data.name || "Tu borrador",
     tracks: Array.isArray(data.tracks) ? data.tracks.slice() : [],
     not_found: Array.isArray(data.not_found) ? data.not_found.slice() : [],
+    suggestions: Array.isArray(data.suggestions) ? data.suggestions.slice() : [],
     answer: data.answer || "",
     url: data.url || null,
     demo: !!isDemo,
   };
-  // Limpia el buscador al cambiar de borrador.
+  // Limpia el buscador y el refine al cambiar de borrador.
   if(searchInput){ searchInput.value = ""; closeSearch(); }
+  if(refineInput){ refineInput.value = ""; setRefineBusy(false); }
   renderDraft();
   draftView.classList.add("on");
   draftView.scrollIntoView({behavior:"smooth",block:"start"});
@@ -874,6 +1014,7 @@ function renderDraft(){
   }
 
   renderTracks();
+  renderSuggestions();
 
   // Botón publicar
   const alreadyPublished = !!currentDraft.url;
@@ -894,6 +1035,8 @@ function renderDraft(){
 
 // Pinta solo la lista de tarjetas de track.
 function renderTracks(){
+  // Al re-pintar la lista los botones antiguos desaparecen: paramos cualquier preview.
+  stopCurrentPlayback();
   trackList.innerHTML = "";
   if(!currentDraft.tracks.length){
     trackList.innerHTML = `<div class="history-empty">Sin temas. Añade alguno abajo o previsualiza otro borrador.</div>`;
@@ -938,12 +1081,71 @@ function buildTrackCard(track, idx){
   info.appendChild(title);
   info.appendChild(artist);
 
+  // Barra de score (0-100). Si es null / no numérico, no se muestra nada.
+  const rawScore = track.score;
+  if(rawScore != null && Number.isFinite(Number(rawScore))){
+    const val = Math.max(0, Math.min(100, Number(rawScore)));
+    const scoreEl = document.createElement("div");
+    scoreEl.className = "track-score";
+    const bar = document.createElement("div");
+    bar.className = "ts-bar";
+    bar.setAttribute("role","meter");
+    bar.setAttribute("aria-label","Score");
+    bar.setAttribute("aria-valuenow", String(Math.round(val)));
+    const fill = document.createElement("i");
+    fill.style.width = val + "%";
+    // Color según valor: alto verde, medio ámbar, bajo magenta.
+    fill.style.background = val >= 70 ? "var(--spotify)" : val >= 40 ? "#F59E0B" : "#EC4899";
+    bar.appendChild(fill);
+    const num = document.createElement("span");
+    num.className = "ts-num";
+    num.textContent = String(Math.round(val));
+    scoreEl.appendChild(bar);
+    scoreEl.appendChild(num);
+    info.appendChild(scoreEl);
+  }
+
   // Handle de arrastrar (drag&drop nativo activado desde el handle).
   const handle = document.createElement("div");
   handle.className = "drag-handle";
   handle.title = "Arrastra para reordenar";
   handle.textContent = "⠿";
   handle.setAttribute("aria-label","Reordenar");
+
+  // Botón play / preview (un solo <audio> compartido; ver reproducción abajo).
+  const play = document.createElement("button");
+  play.className = "track-play";
+  play.type = "button";
+  play.dataset.state = "idle";
+  play.title = "Escuchar preview";
+  play.setAttribute("aria-label","Reproducir preview");
+  const ppIcon = document.createElement("span");
+  ppIcon.className = "pp-icon";
+  ppIcon.textContent = "▶";
+  const ppSpin = document.createElement("span");
+  ppSpin.className = "pp-spin";
+  ppSpin.setAttribute("aria-hidden","true");
+  play.appendChild(ppIcon);
+  play.appendChild(ppSpin);
+  play.addEventListener("click", ()=> onPlayClick(play, track));
+
+  // Feedback 👍 / 👎 / 🚫
+  const fb = document.createElement("div");
+  fb.className = "track-fb";
+  [
+    ["like",    "👍", "Me gusta"],
+    ["dislike", "👎", "Menos como esto"],
+    ["block",   "🚫", "Bloquear artista"],
+  ].forEach(([verdict, icon, label])=>{
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "fb-btn fb-" + verdict;
+    b.textContent = icon;
+    b.title = label;
+    b.setAttribute("aria-label", label);
+    b.addEventListener("click", ()=> sendFeedback(b, fb, verdict, track));
+    fb.appendChild(b);
+  });
 
   // Botón quitar
   const remove = document.createElement("button");
@@ -954,13 +1156,235 @@ function buildTrackCard(track, idx){
   remove.textContent = "✕";
   remove.addEventListener("click", ()=> removeTrack(uri));
 
+  // Acciones agrupadas (play + feedback + quitar).
+  const actions = document.createElement("div");
+  actions.className = "track-actions";
+  actions.appendChild(play);
+  actions.appendChild(fb);
+  actions.appendChild(remove);
+
   card.appendChild(handle);
   card.appendChild(cover);
   card.appendChild(info);
-  card.appendChild(remove);
+  card.appendChild(actions);
 
   wireDrag(card, handle);
   return card;
+}
+
+/* =========================================================
+   PLAY / PREVIEW por tarjeta (GET /preview)
+   Un ÚNICO <audio> compartido: solo suena una preview a la vez.
+   Estados del botón: idle (▶) / loading (spinner) / playing (⏸).
+   ========================================================= */
+let sharedAudio = null;   // el único elemento <audio>
+let playingBtn = null;    // botón que está sonando/cargando ahora mismo
+let playSeq = 0;          // descarta fetches/reproducciones obsoletas
+
+function getSharedAudio(){
+  if(!sharedAudio){
+    sharedAudio = document.createElement("audio");
+    sharedAudio.preload = "none";
+    // Al acabar la preview, el botón vuelve a ▶.
+    sharedAudio.addEventListener("ended", ()=>{ if(playingBtn){ setPlayState(playingBtn,"idle"); playingBtn = null; } });
+    document.body.appendChild(sharedAudio);
+  }
+  return sharedAudio;
+}
+
+// Ajusta la apariencia/estado del botón play.
+function setPlayState(btn, state){
+  if(!btn) return;
+  btn.dataset.state = state;
+  btn.classList.toggle("loading", state === "loading");
+  btn.classList.toggle("playing", state === "playing");
+  const icon = btn.querySelector(".pp-icon");
+  if(icon){
+    if(state === "playing"){ icon.textContent = "⏸"; btn.setAttribute("aria-label","Pausar preview"); }
+    else { icon.textContent = "▶"; btn.setAttribute("aria-label","Reproducir preview"); }
+  }
+}
+
+// Para cualquier reproducción en curso e invalida fetches pendientes.
+function stopCurrentPlayback(){
+  playSeq++;                       // invalida cualquier fetch/play a medias
+  if(sharedAudio){ try{ sharedAudio.pause(); }catch(_){} }
+  if(playingBtn){ setPlayState(playingBtn,"idle"); playingBtn = null; }
+}
+
+async function onPlayClick(btn, track){
+  const state = btn.dataset.state;
+  // Si esta misma tarjeta está sonando → pausar.
+  if(state === "playing"){ stopCurrentPlayback(); return; }
+  // Si está cargando, ignoramos el segundo clic.
+  if(state === "loading") return;
+
+  // Solo una a la vez: paramos lo que hubiera.
+  stopCurrentPlayback();
+
+  const audio = getSharedAudio();
+  const seq = ++playSeq;
+  playingBtn = btn;
+  btn.classList.remove("no-preview");
+  setPlayState(btn,"loading");
+
+  try{
+    const url = "/preview?artist=" + encodeURIComponent(track.artist || "")
+              + "&title=" + encodeURIComponent(track.title || "");
+    const res = await fetch(url,{headers:{"Accept":"application/json"}});
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if(seq !== playSeq) return;                    // otro clic la reemplazó
+    if(!data || !data.preview_url){
+      setPlayState(btn,"idle");
+      btn.classList.add("no-preview");
+      playingBtn = null;
+      toast("Sin preview para este tema");
+      return;
+    }
+    audio.src = data.preview_url;
+    await audio.play();
+    if(seq !== playSeq){ try{ audio.pause(); }catch(_){} return; }
+    setPlayState(btn,"playing");
+  }catch(err){
+    if(seq !== playSeq) return;
+    setPlayState(btn,"idle");
+    playingBtn = null;
+    toast("No se pudo reproducir el preview");
+  }
+}
+
+/* =========================================================
+   FEEDBACK por tarjeta (POST /feedback)
+   👍 like · 👎 dislike · 🚫 block (bloquear artista).
+   No recarga el borrador; solo marca el botón y avisa por toast.
+   ========================================================= */
+async function sendFeedback(btn, group, verdict, track){
+  // Marca activo solo el botón pulsado dentro de su grupo.
+  group.querySelectorAll(".fb-btn").forEach(b=> b.classList.toggle("active", b === btn));
+
+  const artist = track.artist || "el artista";
+  const msg = verdict === "like"    ? "👍 aprendido"
+            : verdict === "dislike" ? "👎 menos " + artist
+            :                         "🚫 " + artist + " bloqueado";
+  toast(msg);
+
+  try{
+    await fetch("/feedback",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body: JSON.stringify({verdict, artist: track.artist, track_uri: track.uri})
+    });
+  }catch(_){ /* silencioso: en demo/sin server no hay endpoint */ }
+}
+
+/* =========================================================
+   PANEL DE SUGERENCIAS DEL DJ
+   currentDraft.suggestions: [{type:"fill"|"add"|"replace", from?, to, reason}]
+   ========================================================= */
+
+// Texto legible de una sugerencia (sin HTML: se usa vía textContent).
+function suggestionText(s){
+  const to = s.to || {};
+  const toLabel = [to.artist, to.title].filter(Boolean).join(" - ") || "tema";
+  if(s.type === "fill")    return "Rellenar hueco → " + toLabel;
+  if(s.type === "replace"){
+    const from = s.from || {};
+    const fromLabel = [from.artist, from.title].filter(Boolean).join(" - ") || "tema";
+    return "Cambiar " + fromLabel + " por " + toLabel;
+  }
+  return "Añadir " + toLabel;   // "add" (o desconocido)
+}
+
+function suggestionIcon(type){
+  if(type === "fill")    return "🩹";
+  if(type === "replace") return "🔄";
+  return "➕";                    // "add"
+}
+
+function buildSuggestionRow(s){
+  const item = document.createElement("div");
+  item.className = "sug-item";
+
+  const icon = document.createElement("div");
+  icon.className = "sug-icon";
+  icon.textContent = suggestionIcon(s.type);
+  icon.setAttribute("aria-hidden","true");
+
+  const body = document.createElement("div");
+  body.className = "sug-body";
+  const txt = document.createElement("div");
+  txt.className = "sug-text";
+  txt.textContent = suggestionText(s);
+  body.appendChild(txt);
+  if(s.reason){
+    const reason = document.createElement("div");
+    reason.className = "sug-reason";
+    reason.textContent = s.reason;
+    body.appendChild(reason);
+  }
+
+  const acts = document.createElement("div");
+  acts.className = "sug-acts";
+  const apply = document.createElement("button");
+  apply.type = "button";
+  apply.className = "sug-btn sug-apply";
+  apply.textContent = "Aplicar";
+  apply.addEventListener("click", ()=> applySuggestion(s));
+  const discard = document.createElement("button");
+  discard.type = "button";
+  discard.className = "sug-btn sug-discard";
+  discard.textContent = "Descartar";
+  discard.addEventListener("click", ()=> discardSuggestion(s));
+  acts.appendChild(apply);
+  acts.appendChild(discard);
+
+  item.appendChild(icon);
+  item.appendChild(body);
+  item.appendChild(acts);
+  return item;
+}
+
+function renderSuggestions(){
+  if(!suggestionsPanel) return;
+  suggestionsPanel.innerHTML = "";
+  const sugs = (currentDraft && Array.isArray(currentDraft.suggestions)) ? currentDraft.suggestions : [];
+  if(!sugs.length){ suggestionsPanel.style.display = "none"; return; }
+
+  suggestionsPanel.style.display = "block";
+  const head = document.createElement("div");
+  head.className = "sug-head";
+  head.textContent = "🔎 Sugerencias del DJ";
+  suggestionsPanel.appendChild(head);
+  sugs.forEach(s=> suggestionsPanel.appendChild(buildSuggestionRow(s)));
+}
+
+// Quita una sugerencia del panel (por referencia).
+function dropSuggestion(s){
+  if(!currentDraft || !Array.isArray(currentDraft.suggestions)) return;
+  const i = currentDraft.suggestions.indexOf(s);
+  if(i >= 0) currentDraft.suggestions.splice(i, 1);
+}
+
+// Aplica la sugerencia sobre el borrador actual vía patchDraft, y la retira.
+function applySuggestion(s){
+  if(!currentDraft) return;
+  const to = s.to || {};
+  const addObj = {artist: to.artist, title: to.title, uri: to.uri, cover_url: to.cover_url};
+  dropSuggestion(s);
+  renderSuggestions();               // feedback visual inmediato
+  if(s.type === "replace" && s.from && s.from.uri){
+    patchDraft({remove:[s.from.uri], add:[addObj]});
+  }else{
+    // "add" y "fill" → solo añadir.
+    patchDraft({add:[addObj]});
+  }
+}
+
+// Descarta: solo la quita del panel.
+function discardSuggestion(s){
+  dropSuggestion(s);
+  renderSuggestions();
 }
 
 /* ---------- Drag & drop nativo para REORDENAR ---------- */
@@ -1314,6 +1738,88 @@ async function patchDraft(ops){
   }
 }
 
+/* =========================================================
+   REFINE CONVERSACIONAL (POST /dj/draft/{id}/refine)
+   Reescribe el borrador en lenguaje natural. LENTO (~1-2 min).
+   ========================================================= */
+let refineTimer = null;   // rotación de frases del estado de carga
+let refineBusy = false;
+
+const FRASES_REFINE = [
+  "Afinando tu selección…",
+  "Reescribiendo el borrador…",
+  "Buscando mejores encajes…",
+  "Filtrando lo comercial…",
+];
+
+function setRefineBusy(on){
+  refineBusy = on;
+  refineBtn.disabled = on;
+  refineInput.disabled = on;
+  refineBar.classList.toggle("busy", on);
+  refineStatus.classList.toggle("on", on);
+  if(on){
+    let idx = 0;
+    refineStatusText.textContent = FRASES_REFINE[0];
+    refineTimer = setInterval(()=>{
+      idx = (idx + 1) % FRASES_REFINE.length;
+      refineStatusText.textContent = FRASES_REFINE[idx];
+    }, 1600);
+  }else{
+    if(refineTimer){ clearInterval(refineTimer); refineTimer = null; }
+  }
+}
+
+// Resumen corto de un markdown/respuesta para el toast.
+function shortSummary(text, max){
+  const plain = String(text || "")
+    .replace(/[#*_>`\-]/g, " ")   // quita marcas markdown
+    .replace(/\s+/g, " ")
+    .trim();
+  if(!plain) return "";
+  return plain.length > max ? plain.slice(0, max).trim() + "…" : plain;
+}
+
+async function refineDraft(){
+  if(refineBusy) return;
+  if(!currentDraft){ refineInput.focus(); return; }
+
+  const instruction = refineInput.value.trim();
+  if(!instruction) return;
+
+  // Requiere servidor vivo y borrador real (no demo).
+  if(!serverUp || currentDraft.demo){
+    toast("El refine conversacional necesita servidor.");
+    return;
+  }
+
+  setRefineBusy(true);
+  try{
+    const res = await fetch(`/dj/draft/${encodeURIComponent(currentDraft.draft_id)}/refine`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body: JSON.stringify({instruction})
+    });
+    if(!res.ok){
+      const detail = await res.text().catch(()=> "");
+      throw new Error("HTTP " + res.status + (detail ? " – " + detail.slice(0,140) : ""));
+    }
+    const data = await res.json();
+    if(Array.isArray(data.tracks)) currentDraft.tracks = data.tracks;
+    if(data.draft_id) currentDraft.draft_id = data.draft_id;
+    if(data.answer) currentDraft.answer = data.answer;
+    refineInput.value = "";
+    renderDraft();
+    const sum = shortSummary(data.answer, 120);
+    toast(sum ? "🎚️ " + sum : "🎚️ Borrador afinado.");
+  }catch(err){
+    // El server está vivo: error puntual. El borrador se queda como estaba.
+    toast("No se pudo afinar: " + (err.message || err));
+  }finally{
+    setRefineBusy(false);
+  }
+}
+
 /* ---------- Publicar borrador ---------- */
 async function publishDraft(){
   if(!currentDraft || !currentDraft.tracks.length) return;
@@ -1534,11 +2040,24 @@ He captado ${escapeHtml(vibe)} y he montado algo **oscuro, hipnótico y nada com
 function buildDemoDraft(message){
   const vibe = message ? `"${escapeHtml(message)}"` : "tu vibe";
   const tracks = [
-    {artist:"La Zona Fantasma", title:"Neón Sucio",    uri:"demo:track:1", cover_url:demoCover("#7C3AED","#EC4899")},
-    {artist:"Chico Blanco",     title:"Humo Violeta",  uri:"demo:track:2", cover_url:demoCover("#EC4899","#1DB954")},
-    {artist:"Bxrber",           title:"Ruido de Fondo",uri:"demo:track:3", cover_url:demoCover("#1DB954","#7C3AED")},
-    {artist:"El Bloque",        title:"Sótano",        uri:"demo:track:4", cover_url:""},
-    {artist:"Ralphie Choo",     title:"Aurora Baja",   uri:"demo:track:5", cover_url:demoCover("#F59E0B","#EC4899")},
+    {artist:"La Zona Fantasma", title:"Neón Sucio",    uri:"demo:track:1", cover_url:demoCover("#7C3AED","#EC4899"), score:88},
+    {artist:"Chico Blanco",     title:"Humo Violeta",  uri:"demo:track:2", cover_url:demoCover("#EC4899","#1DB954"), score:64},
+    {artist:"Bxrber",           title:"Ruido de Fondo",uri:"demo:track:3", cover_url:demoCover("#1DB954","#7C3AED"), score:41},
+    {artist:"El Bloque",        title:"Sótano",        uri:"demo:track:4", cover_url:"", score:null},
+    {artist:"Ralphie Choo",     title:"Aurora Baja",   uri:"demo:track:5", cover_url:demoCover("#F59E0B","#EC4899"), score:92},
+  ];
+  // Sugerencias de ejemplo para el panel del DJ (modo demo).
+  const suggestions = [
+    {type:"fill",
+     to:{artist:"DJ Playero", title:"Bajo Cero", uri:"demo:track:s1", cover_url:demoCover("#7C3AED","#1DB954")},
+     reason:"Rellena el bajón de energía a mitad de sesión sin romper el mood."},
+    {type:"add",
+     to:{artist:"Rusowsky", title:"Dolores", uri:"demo:track:s2", cover_url:demoCover("#EC4899","#F59E0B")},
+     reason:"Encaja con el cierre glitch-pop y suma textura underground."},
+    {type:"replace",
+     from:{artist:"El Bloque", title:"Sótano", uri:"demo:track:4"},
+     to:{artist:"Cruz Cafuné", title:"Perreo del Fin del Mundo", uri:"demo:track:s3", cover_url:demoCover("#1DB954","#7C3AED")},
+     reason:"Sube el punch manteniendo el rollo nocturno."},
   ];
   const answer =
 `## 🎧 Borrador listo para retocar
@@ -1554,6 +2073,7 @@ He captado ${vibe} y te he preparado un **borrador editable**: quita lo que no e
     name: "VibeSync · Underground Nocturno",
     tracks,
     not_found: [{artist:"Artista Fantasma", title:"Tema Inexistente"}],
+    suggestions,
     answer,
   };
 }
@@ -1619,6 +2139,11 @@ function init(){
   searchInput.addEventListener("focus", ()=>{ if(searchResults.length) openSearch(); });
   // Click fuera del buscador → cierra el dropdown.
   document.addEventListener("click",(e)=>{ if(searchAdd && !searchAdd.contains(e.target)) closeSearch(); });
+  // Refine conversacional del borrador.
+  refineBtn.addEventListener("click", refineDraft);
+  refineInput.addEventListener("keydown",(e)=>{
+    if(e.key==="Enter"){ e.preventDefault(); refineDraft(); }
+  });
   // Ctrl/Cmd+Enter en el textarea → previsualiza borrador.
   promptEl.addEventListener("keydown",(e)=>{
     if((e.ctrlKey||e.metaKey) && e.key==="Enter"){ e.preventDefault(); previewDraft(); }

@@ -16,13 +16,13 @@ from app.spotify.session import current_user, get_access_token
 router = APIRouter(tags=["dj"])
 
 DJ_SYSTEM = (
-    "Eres el DJ de VibeSync. Flujo: 1) `get_user_music_profile` para el contexto (una vez). "
-    "2) `find_similar_underground_tracks` sobre 1-2 artistas del usuario — devuelve TRACKS "
-    "underground (artista+título) ya filtrados de lo comercial. 3) Reúne ~12-15 temas y llama a "
-    "`crear_playlist_spotify` con el nombre y la lista de {artist,title} para CREARLA en Spotify. "
-    "No uses `search_tracks_database` para descubrir (solo tiene el historial del usuario). "
-    "Tras crearla, responde en Markdown con una tabla (artista · título · por qué encaja) y una "
-    "explicación breve de por qué la selección es underground y no comercial."
+    "Eres el DJ de VibeSync. Flujo eficiente: 1) `get_user_preferences` + `get_user_music_profile` "
+    "(una vez). 2) `find_similar_underground_tracks` sobre 1-2 artistas — como MUCHO 2 veces (es lento). "
+    "3) Reúne ~12-15 temas. OBLIGATORIO: si el usuario NOMBRA artistas o temas concretos, INCLÚYELOS "
+    "SIEMPRE (aunque sean comerciales o no estén en tu BD; Spotify resuelve cualquier artista real); "
+    "nunca los omitas. 4) Llama a `crear_playlist_spotify` con nombre y lista {artist,title} para "
+    "CREARLA en Spotify. No uses `search_tracks_database` para descubrir. Tras crearla, responde en "
+    "Markdown con una tabla (artista · título · por qué encaja) y por qué es underground."
 )
 
 
@@ -48,7 +48,8 @@ async def dj_create(req: DjRequest):
                                 lastfm=lastfm, spotify=spotify, result_holder=holder)
     try:
         answer = await run_agent(llm, executors, ARG_MODELS, req.message,
-                                 tool_schemas=TOOL_SCHEMAS, max_iters=12, system=DJ_SYSTEM)
+                                 tool_schemas=TOOL_SCHEMAS, max_iters=16, system=DJ_SYSTEM,
+                                 result_holder=holder)
     finally:
         await llm.aclose()
         if lastfm is not None:

@@ -7,7 +7,7 @@ escribe en Spotify al publicar.
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from app.agent.executors import build_executors
@@ -18,6 +18,7 @@ from app.config import get_settings
 from app.db.client import get_db
 from app.enrich.embeddings import get_embedder
 from app.enrich.lastfm import LastFmClient
+from app.enrich.tracks import save_draft_tracks
 from app.spotify.playlists import SpotifyPlaylistController
 from app.spotify.session import current_user, get_access_token
 
@@ -25,11 +26,16 @@ router = APIRouter(tags=["drafts"])
 
 DRAFT_SYSTEM = (
     "Eres el DJ de VibeSync. Propón un BORRADOR de playlist, NO crees nada en Spotify. "
-    "Flujo: 1) `get_user_music_profile` (una vez). 2) `find_similar_underground_tracks` sobre "
-    "1-2 artistas del usuario — devuelve TRACKS underground ya filtrados de lo comercial. "
-    "3) Reúne ~12-15 temas y llama a `proponer_playlist_draft` con nombre y lista {artist,title}. "
-    "NO uses `crear_playlist_spotify` ni `search_tracks_database` para descubrir. Tras proponerlo, "
-    "responde en Markdown con una tabla (artista · título · por qué) y por qué es underground."
+    "Flujo eficiente: 1) `get_user_preferences` y `get_user_music_profile` (una vez cada uno). "
+    "2) `find_similar_underground_tracks` sobre 1-2 artistas — como MUCHO 2 veces (es lento). "
+    "3) Reúne ~12-15 temas. "
+    "OBLIGATORIO: si el usuario NOMBRA artistas o temas concretos, INCLÚYELOS SIEMPRE (aunque sean "
+    "comerciales o no estén en tu BD; Spotify resuelve cualquier artista real). NUNCA omitas un "
+    "artista que el usuario pidió. "
+    "4) Llama YA a `proponer_playlist_draft` con la lista COMPLETA {artist,title}. "
+    "5) Después llama UNA vez a `asegurar_playlist` con `requested_artists` = los artistas que el "
+    "usuario nombró, para revisar huecos/faltas. NO uses `crear_playlist_spotify` ni "
+    "`search_tracks_database` para descubrir. Termina con una tabla Markdown (artista · título · por qué)."
 )
 
 
@@ -59,10 +65,12 @@ class RefineReq(BaseModel):
 
 
 REFINE_SYSTEM = (
-    "Eres el DJ de VibeSync EDITANDO un borrador existente. Se te da la lista actual de temas "
-    "numerada y una instrucción del usuario. Aplícala (mantén los que sigan, quita los indicados, "
-    "añade nuevos underground con `find_similar_underground_tracks` si hace falta) y llama a "
-    "`proponer_playlist_draft` con la lista COMPLETA resultante. Respeta el veto (`get_user_preferences`). "
+    "Eres el DJ de VibeSync EDITANDO un borrador existente. Se te da la lista actual numerada y una "
+    "instrucción. Aplícala: mantén los que sigan, quita los indicados, añade nuevos con "
+    "`find_similar_underground_tracks` si hace falta (MÁX 2 veces, es lento). "
+    "OBLIGATORIO: MANTÉN los artistas que el usuario pide y NUNCA omitas un artista nombrado (aunque "
+    "sea comercial o no esté en BD). Llama a `proponer_playlist_draft` con la lista COMPLETA "
+    "resultante y luego UNA vez a `asegurar_playlist`. Respeta el veto (`get_user_preferences`). "
     "Responde con una nota breve de los cambios."
 )
 
@@ -77,7 +85,7 @@ async def _clients(db, user_id):
 
 
 @router.post("/dj/draft")
-async def dj_draft(req: DjRequest):
+async def dj_draft(req: DjRequest, background: BackgroundTasks):
     db = get_db()
     user = await current_user(db)
     if not user:
@@ -89,7 +97,8 @@ async def dj_draft(req: DjRequest):
                                 lastfm=lastfm, spotify=spotify, result_holder=holder)
     try:
         answer = await run_agent(llm, executors, ARG_MODELS, req.message,
-                                 tool_schemas=TOOL_SCHEMAS, max_iters=12, system=DRAFT_SYSTEM)
+                                 tool_schemas=TOOL_SCHEMAS, max_iters=16, system=DRAFT_SYSTEM,
+                                 result_holder=holder)
     finally:
         await llm.aclose()
         if lastfm is not None:
@@ -98,17 +107,22 @@ async def dj_draft(req: DjRequest):
             await spotify.aclose()
 
     d = holder.get("draft") or {}
+    suggestions = holder.get("suggestions", [])
     draft_id = uuid.uuid4().hex
     now = _utcnow()
     doc = {
         "_id": draft_id, "user_id": user_id, "prompt": req.message,
         "name": d.get("name") or "VibeSync Draft", "status": "draft",
         "tracks": d.get("tracks", []), "not_found": d.get("not_found", []),
+        "suggestions": suggestions,
         "created_at": now, "updated_at": now,
     }
     await db["playlist_drafts"].insert_one(doc)
+    # en background: guarda los tracks resueltos en `tracks` (embeddings) → la búsqueda semántica crece
+    if doc["tracks"]:
+        background.add_task(save_draft_tracks, db, doc["tracks"], embedder=get_embedder())
     return {"draft_id": draft_id, "name": doc["name"], "tracks": doc["tracks"],
-            "not_found": doc["not_found"], "answer": answer}
+            "not_found": doc["not_found"], "answer": answer, "suggestions": suggestions}
 
 
 @router.patch("/dj/draft/{draft_id}")
@@ -152,7 +166,7 @@ async def edit_draft(draft_id: str, edit: DraftEdit):
 
 
 @router.post("/dj/draft/{draft_id}/refine")
-async def refine_draft(draft_id: str, req: RefineReq):
+async def refine_draft(draft_id: str, req: RefineReq, background: BackgroundTasks):
     db = get_db()
     draft = await db["playlist_drafts"].find_one({"_id": draft_id})
     if not draft:
@@ -161,7 +175,8 @@ async def refine_draft(draft_id: str, req: RefineReq):
     current = "\n".join(f"{i + 1}. {t['artist']} - {t['title']}"
                         for i, t in enumerate(draft.get("tracks", [])))
     msg = (f"Borrador actual '{draft['name']}':\n{current}\n\n"
-           f"Instrucción del usuario: {req.instruction}")
+           f"Instrucción del usuario: {req.instruction}\n"
+           "Mantén los artistas que el usuario pida; no borres lo que quiere conservar.")
 
     llm, lastfm, spotify = await _clients(db, user_id)
     holder: dict = {}
@@ -169,7 +184,8 @@ async def refine_draft(draft_id: str, req: RefineReq):
                                 lastfm=lastfm, spotify=spotify, result_holder=holder)
     try:
         answer = await run_agent(llm, executors, ARG_MODELS, msg,
-                                 tool_schemas=TOOL_SCHEMAS, max_iters=10, system=REFINE_SYSTEM)
+                                 tool_schemas=TOOL_SCHEMAS, max_iters=16, system=REFINE_SYSTEM,
+                                 result_holder=holder)
     finally:
         await llm.aclose()
         if lastfm is not None:
@@ -178,13 +194,16 @@ async def refine_draft(draft_id: str, req: RefineReq):
             await spotify.aclose()
 
     d = holder.get("draft") or {}
+    suggestions = holder.get("suggestions", [])
     if d.get("tracks"):
         await db["playlist_drafts"].update_one(
             {"_id": draft_id},
             {"$set": {"tracks": d["tracks"], "not_found": d.get("not_found", []),
-                      "updated_at": _utcnow()}})
+                      "suggestions": suggestions, "updated_at": _utcnow()}})
+        background.add_task(save_draft_tracks, db, d["tracks"], embedder=get_embedder())
     updated = await db["playlist_drafts"].find_one({"_id": draft_id})
-    return {"draft_id": draft_id, "tracks": updated.get("tracks", []), "answer": answer}
+    return {"draft_id": draft_id, "tracks": updated.get("tracks", []),
+            "answer": answer, "suggestions": suggestions}
 
 
 @router.post("/dj/draft/{draft_id}/publish")

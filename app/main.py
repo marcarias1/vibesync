@@ -16,12 +16,17 @@ from app.db.indexes import ensure_indexes
 from app.dj import router as dj_router
 from app.drafts import router as drafts_router
 from app.ingest.router import router as ingest_router
+from app.logbuffer import install as install_logbuffer
+from app.logs_router import router as logs_router
 from app.prefs_router import router as prefs_router
+from app.preview_router import router as preview_router
 from app.scheduler import build_scheduler
 from app.spotify.router import router as auth_router
 from app.suggest_router import router as suggest_router
+from app.tool_usage_router import router as tool_usage_router
 
 logging.basicConfig(level=logging.INFO)
+install_logbuffer()  # captura logs en memoria para el visor /logs
 
 
 @asynccontextmanager
@@ -43,6 +48,9 @@ app.include_router(dj_router)
 app.include_router(drafts_router)
 app.include_router(prefs_router)
 app.include_router(suggest_router)
+app.include_router(preview_router)
+app.include_router(tool_usage_router)
+app.include_router(logs_router)
 
 _WEB = Path(__file__).parent / "web" / "index.html"
 

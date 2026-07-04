@@ -53,6 +53,13 @@ class LastFmClient:
         tracks = data.get("toptracks", {}).get("track", [])
         return [{"artist": artist, "name": t["name"]} for t in tracks[:limit]]
 
+    async def track_info(self, artist: str, title: str) -> dict:
+        """Info de un TEMA concreto: listeners/playcount → saber si es famoso."""
+        t = (await self._get("track.getinfo", artist=artist, track=title)).get("track", {}) or {}
+        return {"listeners": int(t.get("listeners", 0) or 0),
+                "playcount": int(t.get("playcount", 0) or 0),
+                "name": t.get("name")}
+
     async def clean_tags(self, artist: str, min_count: int = 10, limit: int = 10) -> list[str]:
         """Tags de calidad: gettoptags con recuento (0-100); filtra ruido (count bajo)."""
         data = await self._get("artist.gettoptags", artist=artist)

@@ -1,0 +1,17 @@
+# Servicio de USUARIO (systemctl --user). Evita el bloqueo de SELinux que impide a
+# un servicio de SISTEMA ejecutar binarios dentro de /home.
+# Instalar en: ~/.config/systemd/user/vibesync.service
+[Unit]
+Description=VibeSync — AI DJ backend (FastAPI + Mongo)
+
+[Service]
+Type=simple
+WorkingDirectory=/home/marcarias/Documentos/projects/vibesync
+# Levanta Mongo (vector search) y espera a que esté sano antes de arrancar la API
+ExecStartPre=/usr/bin/docker compose -f /home/marcarias/Documentos/projects/vibesync/docker-compose.yml up -d --wait
+ExecStart=/home/marcarias/Documentos/projects/vibesync/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

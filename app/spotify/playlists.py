@@ -91,8 +91,8 @@ class SpotifyPlaylistController:
         images = (t.get("album") or {}).get("images") or []
         return {
             "uri": t["uri"],
-            "name": t.get("name"),
-            "artist": (t.get("artists") or [{}])[0].get("name"),
+            "name": t.get("name"),  # el título ya incluye "(feat. X)" si lo hay
+            "artist": ", ".join(a["name"] for a in t.get("artists", []) if a.get("name")) or None,
             "cover_url": images[0]["url"] if images else None,
         }
 
