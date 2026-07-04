@@ -1,0 +1,47 @@
+[
+  {
+    "ts": "2025-01-01T10:00:00Z",
+    "ms_played": 210000,
+    "spotify_track_uri": "spotify:track:api0000000000000000001",
+    "reason_start": "trackdone",
+    "reason_end": "trackdone",
+    "master_metadata_track_name": "Nightcall",
+    "master_metadata_album_artist_name": "Kavinsky"
+  },
+  {
+    "ts": "2025-01-01T10:05:00Z",
+    "ms_played": 185000,
+    "spotify_track_uri": "spotify:track:api0000000000000000002",
+    "reason_start": "trackdone",
+    "reason_end": "trackdone",
+    "master_metadata_track_name": "Midnight City",
+    "master_metadata_album_artist_name": "M83"
+  },
+  {
+    "ts": "2025-01-01T10:12:00Z",
+    "ms_played": 45000,
+    "spotify_track_uri": "spotify:track:api0000000000000000003",
+    "reason_start": "clickrow",
+    "reason_end": "endplay",
+    "master_metadata_track_name": "Genesis",
+    "master_metadata_album_artist_name": "Justice"
+  },
+  {
+    "ts": "2025-01-01T10:15:00Z",
+    "ms_played": 12000,
+    "spotify_track_uri": "spotify:track:api0000000000000000004",
+    "reason_start": "clickrow",
+    "reason_end": "trackdone",
+    "master_metadata_track_name": "Too Short (skipped early)",
+    "master_metadata_album_artist_name": "Filtered Artist"
+  },
+  {
+    "ts": "2025-01-01T10:18:00Z",
+    "ms_played": 90000,
+    "spotify_track_uri": "spotify:track:api0000000000000000005",
+    "reason_start": "trackdone",
+    "reason_end": "fwdbtn",
+    "master_metadata_track_name": "Skipped Fwd",
+    "master_metadata_album_artist_name": "Filtered Artist"
+  }
+]

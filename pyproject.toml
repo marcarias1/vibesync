@@ -1,0 +1,66 @@
+[project]
+name = "vibesync"
+version = "0.1.0"
+description = "VibeSync - AI Smart Playlist Generator (Agente DJ predictivo para Spotify)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pymongo>=4.9",          # driver async oficial (AsyncMongoClient); NO Motor (deprecado)
+    "pydantic>=2.7",
+    "pydantic-settings>=2.5",
+    "httpx>=0.27",
+    "cryptography>=43",       # Fernet para cifrar refresh tokens
+    "apscheduler>=3.10",
+    "python-multipart>=0.0.9",  # UploadFile/Form en el importador
+]
+
+[project.optional-dependencies]
+# Pesado (torch, etc.). Solo hace falta desde la Fase 3 (enriquecimiento/embeddings).
+ml = [
+    "sentence-transformers>=3.0",  # BGE-M3
+    "gensim>=4.3",                 # track2vec
+    "numpy>=1.26",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",                 # mock de httpx (Spotify/Last.fm)
+    "testcontainers[mongodb]>=4.8",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# Conjunto razonable: pycodestyle-errors, Pyflakes, isort, pyupgrade,
+# flake8-bugbear y flake8-simplify.
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# Reglas que chocan con el estilo actual del código (no bloqueantes):
+#   E501  líneas largas ya presentes en el código
+#   E702  sentencias con punto y coma en scripts
+#   UP017 uso de datetime.timezone.utc en lugar del alias datetime.UTC
+#   UP031 formato con % en mensajes
+#   SIM102 ifs anidados intencionados
+#   B008  Depends()/File() en defaults es idiomático en FastAPI
+#   B905  zip() sin strict=
+ignore = ["E501", "E702", "UP017", "UP031", "SIM102", "B008", "B905"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+# Modo permisivo: no rompemos el build por tipado incompleto.
+strict = false
+warn_unused_ignores = false
+check_untyped_defs = false
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

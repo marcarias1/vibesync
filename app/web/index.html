@@ -1,0 +1,1631 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VibeSync · Aurilla</title>
+
+<!--
+  VibeSync — Frontend autocontenido (una sola página, sin dependencias externas).
+  Todo el CSS y JS va inline. Incluye un mini-renderer de Markdown propio.
+  Estética: tema oscuro, gradiente animado tipo aurora, glassmorphism,
+  acentos en verde Spotify. Con modo DEMO si los fetch fallan.
+
+  Flujos:
+   - Previsualizar BORRADOR (POST /dj/draft) → tarjetas de track editables
+     (quitar, reordenar por drag&drop, añadir) → publicar (POST /dj/draft/{id}/publish).
+   - Crear YA (POST /dj/create) → card de playlist directa (flujo clásico).
+   - Historial de borradores (GET /dj/drafts, GET /dj/draft/{id}).
+-->
+<style>
+  /* ============ Variables de tema ============ */
+  :root{
+    --morado:#7C3AED;
+    --magenta:#EC4899;
+    --spotify:#1DB954;
+    --spotify-dark:#169c46;
+    --bg:#0a0812;
+    --text:#f3eefb;
+    --text-dim:#b9aecb;
+    --glass-bg:rgba(255,255,255,.055);
+    --glass-border:rgba(255,255,255,.12);
+    --radius:20px;
+    --radius-sm:14px;
+    --shadow:0 20px 60px -20px rgba(0,0,0,.75);
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    color:var(--text);
+    background:var(--bg);
+    min-height:100vh;
+    line-height:1.55;
+    overflow-x:hidden;              /* el body NUNCA hace scroll horizontal */
+    position:relative;
+  }
+
+  /* ============ Fondo aurora animado ============ */
+  /* Varias manchas de color en movimiento lento con blur enorme. */
+  .aurora{position:fixed;inset:0;z-index:-2;overflow:hidden;pointer-events:none}
+  .aurora::before,.aurora::after,.blob{
+    content:"";position:absolute;border-radius:50%;filter:blur(90px);opacity:.55;
+    will-change:transform;
+  }
+  .aurora::before{
+    width:55vw;height:55vw;left:-10vw;top:-15vw;
+    background:radial-gradient(circle at center,var(--morado),transparent 70%);
+    animation:drift1 26s ease-in-out infinite alternate;
+  }
+  .aurora::after{
+    width:50vw;height:50vw;right:-12vw;top:5vh;
+    background:radial-gradient(circle at center,var(--magenta),transparent 70%);
+    animation:drift2 32s ease-in-out infinite alternate;
+  }
+  .blob{
+    width:45vw;height:45vw;left:25vw;bottom:-20vw;opacity:.30;
+    background:radial-gradient(circle at center,var(--spotify),transparent 70%);
+    animation:drift3 38s ease-in-out infinite alternate;
+  }
+  @keyframes drift1{from{transform:translate(0,0) scale(1)}to{transform:translate(12vw,10vh) scale(1.2)}}
+  @keyframes drift2{from{transform:translate(0,0) scale(1)}to{transform:translate(-10vw,8vh) scale(1.15)}}
+  @keyframes drift3{from{transform:translate(0,0) scale(1)}to{transform:translate(-8vw,-12vh) scale(1.25)}}
+  /* Velo oscuro para asegurar contraste sobre la aurora */
+  .veil{position:fixed;inset:0;z-index:-1;background:
+    radial-gradient(120% 120% at 50% 0%,transparent 40%,rgba(6,4,12,.7) 100%),
+    linear-gradient(180deg,rgba(10,8,18,.4),rgba(10,8,18,.85));pointer-events:none}
+
+  @media (prefers-reduced-motion:reduce){
+    .aurora::before,.aurora::after,.blob{animation:none}
+  }
+
+  /* ============ Layout ============ */
+  .wrap{max-width:900px;margin:0 auto;padding:22px 20px 80px}
+
+  /* ============ Header ============ */
+  header.top{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+    padding:14px 18px;margin-bottom:34px;
+    background:var(--glass-bg);border:1px solid var(--glass-border);
+    border-radius:var(--radius);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    box-shadow:var(--shadow);
+  }
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.28rem;letter-spacing:.2px}
+  .logo .mark{
+    font-size:1.5rem;
+    filter:drop-shadow(0 2px 8px rgba(124,58,237,.6));
+  }
+  .logo .name{
+    background:linear-gradient(90deg,#fff,#e9d8ff 40%,var(--magenta));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+
+  /* Badge de estado Spotify */
+  .badge{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:9px 15px;border-radius:999px;font-size:.86rem;font-weight:600;
+    border:1px solid var(--glass-border);white-space:nowrap;
+  }
+  .badge.connected{
+    color:#c8ffd8;background:rgba(29,185,84,.14);border-color:rgba(29,185,84,.4);
+  }
+  .badge .dot{width:9px;height:9px;border-radius:50%;background:var(--spotify);
+    box-shadow:0 0 10px var(--spotify);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+  /* Botón genérico */
+  .btn{
+    border:none;cursor:pointer;font:inherit;font-weight:700;
+    border-radius:999px;padding:11px 20px;color:#04240f;
+    background:linear-gradient(180deg,#25d366,var(--spotify));
+    box-shadow:0 8px 22px -6px rgba(29,185,84,.7);
+    transition:transform .15s ease,box-shadow .2s ease,filter .2s ease;
+  }
+  .btn:hover{transform:translateY(-2px);filter:brightness(1.06);box-shadow:0 12px 28px -6px rgba(29,185,84,.8)}
+  .btn:active{transform:translateY(0)}
+  .btn:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
+
+  /* Botón secundario (glass, acento magenta) — para "Previsualizar borrador" */
+  .btn-ghost{
+    color:#fff;
+    background:rgba(255,255,255,.06);
+    border:1px solid var(--glass-border);
+    box-shadow:none;
+  }
+  .btn-ghost:hover{
+    background:rgba(236,72,153,.16);border-color:var(--magenta);
+    box-shadow:0 10px 26px -10px rgba(236,72,153,.6);filter:none;
+  }
+
+  /* ============ Hero ============ */
+  .hero{text-align:center;margin:10px 0 30px;animation:fadeUp .7s ease both}
+  .hero h1{
+    font-size:clamp(2.1rem,6vw,3.4rem);line-height:1.05;margin:0 0 12px;font-weight:850;letter-spacing:-.5px;
+    background:linear-gradient(100deg,#fff 10%,#e9d8ff 45%,var(--magenta) 80%,var(--morado));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .hero p{color:var(--text-dim);font-size:clamp(1rem,2.5vw,1.18rem);margin:0 auto;max-width:560px}
+
+  /* ============ Tarjetas glass ============ */
+  .card{
+    background:var(--glass-bg);border:1px solid var(--glass-border);
+    border-radius:var(--radius);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    box-shadow:var(--shadow);padding:22px;
+  }
+
+  /* Caja de prompt */
+  .prompt-card{margin-bottom:26px;animation:fadeUp .8s ease both}
+  textarea#prompt{
+    width:100%;min-height:110px;resize:vertical;
+    background:rgba(0,0,0,.28);border:1px solid var(--glass-border);
+    border-radius:var(--radius-sm);color:var(--text);
+    padding:15px 16px;font:inherit;font-size:1.02rem;
+    transition:border-color .2s ease,box-shadow .2s ease;
+  }
+  textarea#prompt::placeholder{color:#8c81a0}
+  textarea#prompt:focus{outline:none;border-color:rgba(29,185,84,.65);
+    box-shadow:0 0 0 3px rgba(29,185,84,.18)}
+
+  .chips{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0 18px}
+  .chip{
+    cursor:pointer;font-size:.85rem;font-weight:600;color:var(--text-dim);
+    padding:8px 14px;border-radius:999px;
+    background:rgba(255,255,255,.05);border:1px solid var(--glass-border);
+    transition:all .18s ease;
+  }
+  .chip:hover{color:#fff;border-color:var(--magenta);background:rgba(236,72,153,.16);transform:translateY(-1px)}
+
+  .actions{display:flex;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+  .btn-generate{font-size:1.05rem;padding:13px 26px}
+
+  /* ============ Loading (ecualizador) ============ */
+  .loader{display:none;flex-direction:column;align-items:center;gap:18px;padding:40px 20px;text-align:center;animation:fadeUp .4s ease both}
+  .loader.on{display:flex}
+  .equalizer{display:flex;align-items:flex-end;gap:6px;height:56px}
+  .equalizer span{
+    width:8px;border-radius:6px;
+    background:linear-gradient(180deg,var(--magenta),var(--spotify));
+    animation:eq 1s ease-in-out infinite;
+  }
+  .equalizer span:nth-child(1){animation-delay:0s}
+  .equalizer span:nth-child(2){animation-delay:.15s}
+  .equalizer span:nth-child(3){animation-delay:.3s}
+  .equalizer span:nth-child(4){animation-delay:.45s}
+  .equalizer span:nth-child(5){animation-delay:.6s}
+  .equalizer span:nth-child(6){animation-delay:.75s}
+  .equalizer span:nth-child(7){animation-delay:.3s}
+  @keyframes eq{0%,100%{height:14px}50%{height:52px}}
+  .loader .status{color:var(--text-dim);font-weight:600;font-size:1.05rem;min-height:1.4em}
+
+  /* ============ Resultado (Crear ya) ============ */
+  #result{display:none;animation:fadeUp .5s ease both}
+  #result.on{display:block}
+
+  /* Tarjeta destacada de playlist */
+  .playlist-cta{
+    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    margin-bottom:22px;padding:20px 22px;
+    border-radius:var(--radius);
+    background:linear-gradient(120deg,rgba(29,185,84,.18),rgba(124,58,237,.14));
+    border:1px solid rgba(29,185,84,.4);
+    box-shadow:0 16px 40px -14px rgba(29,185,84,.5);
+  }
+  .playlist-cta .pl-info{flex:1;min-width:180px}
+  .playlist-cta .pl-info .lbl{color:var(--text-dim);font-size:.8rem;text-transform:uppercase;letter-spacing:1px}
+  .playlist-cta .pl-info .pl-name{font-size:1.25rem;font-weight:800;margin-top:2px}
+  .playlist-cta .pl-info .pl-meta{color:var(--text-dim);font-size:.9rem;margin-top:3px}
+  .playlist-cta a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:8px}
+
+  /* Markdown renderizado */
+  .md{background:rgba(0,0,0,.22);border:1px solid var(--glass-border);
+    border-radius:var(--radius);padding:6px 24px 20px;overflow-x:auto}
+  .md h1,.md h2,.md h3{line-height:1.25;font-weight:800;margin:22px 0 10px}
+  .md h1{font-size:1.6rem}
+  .md h2{font-size:1.32rem;color:#f0e6ff}
+  .md h3{font-size:1.1rem;color:var(--text-dim)}
+  .md p{margin:10px 0}
+  .md strong{color:#fff;font-weight:800}
+  .md ul,.md ol{margin:10px 0;padding-left:22px}
+  .md li{margin:5px 0}
+  .md hr{border:none;height:1px;margin:22px 0;
+    background:linear-gradient(90deg,transparent,var(--glass-border),transparent)}
+  .md a{color:var(--spotify);text-decoration:none;border-bottom:1px dotted rgba(29,185,84,.5)}
+  .md a:hover{filter:brightness(1.2)}
+
+  /* Tablas markdown */
+  .md .tbl-wrap{overflow-x:auto;margin:16px 0;border-radius:var(--radius-sm);border:1px solid var(--glass-border)}
+  .md table{border-collapse:collapse;width:100%;min-width:420px;font-size:.94rem}
+  .md thead th{
+    text-align:left;padding:12px 14px;font-weight:800;
+    background:rgba(124,58,237,.28);color:#fff;
+    border-bottom:1px solid var(--glass-border);white-space:nowrap;
+  }
+  .md tbody td{padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.06);color:var(--text)}
+  .md tbody tr:nth-child(odd){background:rgba(255,255,255,.03)}
+  .md tbody tr:hover{background:rgba(29,185,84,.10)}
+  .md tbody tr:last-child td{border-bottom:none}
+
+  /* ============ Vista de BORRADOR editable ============ */
+  /* position+z-index → el draftView (que ya crea contexto por la animación) se apila
+     por ENCIMA de la sección .history (hermana posterior) → el buscador tapa el historial */
+  #draftView{display:none;position:relative;z-index:5;animation:fadeUp .5s ease both;margin-bottom:26px}
+  #draftView.on{display:block}
+
+  .draft-head{
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    margin-bottom:18px;
+  }
+  .draft-head .d-title{flex:1;min-width:180px}
+  .draft-head .d-title .lbl{color:var(--text-dim);font-size:.8rem;text-transform:uppercase;letter-spacing:1px}
+  .draft-head .d-title .d-name{font-size:1.35rem;font-weight:850;margin-top:2px;
+    background:linear-gradient(90deg,#fff,#e9d8ff 50%,var(--magenta));
+    -webkit-background-clip:text;background-clip:text;color:transparent;}
+  .draft-head .d-count{
+    font-size:.85rem;font-weight:700;color:#c8ffd8;white-space:nowrap;
+    padding:7px 13px;border-radius:999px;
+    background:rgba(29,185,84,.14);border:1px solid rgba(29,185,84,.4);
+  }
+
+  /* Lista de tarjetas de track */
+  .track-list{display:flex;flex-direction:column;gap:11px;margin-bottom:8px}
+  .track-card{
+    display:flex;align-items:center;gap:14px;
+    padding:11px 13px;border-radius:var(--radius-sm);
+    background:var(--glass-bg);border:1px solid var(--glass-border);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    transition:border-color .18s ease,background .18s ease,transform .12s ease,box-shadow .18s ease;
+  }
+  .track-card:hover{border-color:rgba(236,72,153,.4);background:rgba(255,255,255,.075)}
+  .track-card.dragging{opacity:.45;border-color:var(--magenta);box-shadow:0 14px 34px -12px rgba(236,72,153,.6)}
+  .track-card.drop-flash{border-color:rgba(29,185,84,.55)}
+
+  .drag-handle{
+    cursor:grab;color:#8c81a0;font-size:1.15rem;line-height:1;user-select:none;
+    padding:4px 2px;flex:0 0 auto;touch-action:none;
+    transition:color .15s ease;
+  }
+  .drag-handle:hover{color:#fff}
+  .drag-handle:active{cursor:grabbing}
+
+  .track-cover{
+    flex:0 0 auto;width:54px;height:54px;border-radius:10px;object-fit:cover;
+    background:linear-gradient(135deg,rgba(124,58,237,.5),rgba(236,72,153,.4));
+    border:1px solid var(--glass-border);
+    display:flex;align-items:center;justify-content:center;
+    font-size:1.4rem;overflow:hidden;
+  }
+  .track-cover img{width:100%;height:100%;object-fit:cover;display:block}
+
+  .track-info{flex:1;min-width:0}
+  .track-info .t-title{font-weight:800;font-size:1.02rem;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .track-info .t-artist{color:var(--text-dim);font-size:.88rem;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .track-remove{
+    flex:0 0 auto;cursor:pointer;border:none;font:inherit;
+    width:34px;height:34px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    color:#ffb3c6;font-size:1.05rem;font-weight:800;line-height:1;
+    background:rgba(236,72,153,.1);border:1px solid rgba(236,72,153,.3);
+    transition:all .16s ease;
+  }
+  .track-remove:hover{background:rgba(236,72,153,.28);color:#fff;transform:scale(1.08)}
+  .track-remove:disabled{opacity:.4;cursor:not-allowed;transform:none}
+
+  /* Aviso de temas no encontrados */
+  .not-found{
+    margin:4px 0 16px;padding:10px 14px;border-radius:var(--radius-sm);
+    font-size:.85rem;color:#ffe9b3;background:rgba(255,193,7,.08);border:1px solid rgba(255,193,7,.28);
+  }
+  .not-found b{color:#fff}
+
+  /* Buscador en vivo de Spotify (sustituye a la fila de "añadir tema") */
+  /* z-index:100 → crea contexto de apilado propio: el dropdown queda SIEMPRE por
+     encima del historial/publicar (secciones hermanas posteriores) */
+  .search-add{position:relative;z-index:100;margin:14px 0 20px;padding-top:16px;border-top:1px solid var(--glass-border)}
+  .search-add input{
+    width:100%;
+    background:rgba(0,0,0,.28);border:1px solid var(--glass-border);
+    border-radius:999px;color:var(--text);padding:12px 18px;font:inherit;font-size:.98rem;
+    transition:border-color .2s ease,box-shadow .2s ease;
+  }
+  .search-add input::placeholder{color:#8c81a0}
+  .search-add input:focus{outline:none;border-color:rgba(29,185,84,.6);
+    box-shadow:0 0 0 3px rgba(29,185,84,.16)}
+
+  /* Dropdown glass de resultados */
+  .search-dropdown{
+    display:none;position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:60;
+    max-height:min(340px,55vh);overflow-y:auto;overflow-x:hidden;
+    background:rgba(18,12,28,.98);border:1px solid var(--glass-border);
+    border-radius:var(--radius-sm);box-shadow:var(--shadow);
+    backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    padding:6px;
+  }
+  .search-dropdown.on{display:block}
+  .search-result{
+    display:flex;align-items:center;gap:12px;
+    padding:8px 10px;border-radius:10px;cursor:pointer;
+    border:1px solid transparent;transition:background .14s ease,border-color .14s ease;
+  }
+  .search-result:hover,.search-result.active{
+    background:rgba(29,185,84,.14);border-color:rgba(29,185,84,.4);
+  }
+  .search-thumb{
+    flex:0 0 auto;width:42px;height:42px;border-radius:8px;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;font-size:1.15rem;
+    background:linear-gradient(135deg,rgba(124,58,237,.5),rgba(236,72,153,.4));
+    border:1px solid var(--glass-border);
+  }
+  .search-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .search-res-info{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.92rem}
+  .search-res-info .sr-artist{font-weight:800;color:#fff}
+  .search-res-info .sr-sep{color:var(--text-dim);margin:0 5px}
+  .search-res-info .sr-title{color:var(--text-dim)}
+  .search-state{padding:12px 14px;color:var(--text-dim);font-size:.88rem;text-align:center}
+
+  /* Confirmar / publicar */
+  .draft-confirm{display:flex;justify-content:center;margin:6px 0 22px}
+  .btn-publish{font-size:1.12rem;padding:15px 34px;display:inline-flex;align-items:center;gap:9px}
+
+  /* ============ Historial ============ */
+  .history{margin-top:34px}
+  .history summary{
+    cursor:pointer;list-style:none;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:15px 20px;border-radius:var(--radius);
+    background:var(--glass-bg);border:1px solid var(--glass-border);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    font-weight:800;font-size:1.05rem;user-select:none;
+    transition:border-color .18s ease;
+  }
+  .history summary:hover{border-color:rgba(236,72,153,.4)}
+  .history summary::-webkit-details-marker{display:none}
+  .history summary .chev{color:var(--text-dim);font-size:.9rem;transition:transform .2s ease}
+  .history[open] summary .chev{transform:rotate(180deg)}
+  .history-list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+  .history-item{
+    display:flex;align-items:center;gap:14px;text-align:left;
+    padding:13px 16px;border-radius:var(--radius-sm);cursor:pointer;
+    background:var(--glass-bg);border:1px solid var(--glass-border);
+    color:var(--text);font:inherit;width:100%;
+    transition:border-color .16s ease,background .16s ease,transform .12s ease;
+  }
+  .history-item:hover{border-color:rgba(236,72,153,.45);background:rgba(255,255,255,.075);transform:translateX(3px)}
+  .history-item .hi-main{flex:1;min-width:0}
+  .history-item .hi-name{font-weight:800;font-size:1rem;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .history-item .hi-meta{color:var(--text-dim);font-size:.82rem;margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .status-pill{
+    flex:0 0 auto;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.6px;
+    padding:5px 11px;border-radius:999px;white-space:nowrap;
+    color:var(--text-dim);background:rgba(255,255,255,.06);border:1px solid var(--glass-border);
+  }
+  .status-pill.published{color:#c8ffd8;background:rgba(29,185,84,.14);border-color:rgba(29,185,84,.4)}
+  .status-pill.draft{color:#e9d8ff;background:rgba(124,58,237,.16);border-color:rgba(124,58,237,.4)}
+  .history-item a.hi-open{
+    flex:0 0 auto;text-decoration:none;color:#c8ffd8;font-weight:700;font-size:.85rem;
+    padding:6px 12px;border-radius:999px;
+    background:rgba(29,185,84,.14);border:1px solid rgba(29,185,84,.4);
+    transition:background .16s ease;
+  }
+  .history-item a.hi-open:hover{background:rgba(29,185,84,.26)}
+  .history-empty{color:var(--text-dim);font-size:.9rem;padding:14px 4px}
+
+  /* Aviso modo demo (compartido) */
+  .demo-note{display:none;margin-bottom:18px;padding:11px 16px;border-radius:var(--radius-sm);
+    font-size:.86rem;color:#ffe9b3;background:rgba(255,193,7,.10);border:1px solid rgba(255,193,7,.35)}
+  .demo-note.on{display:block}
+
+  @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+  footer.foot{text-align:center;color:#7a6f8e;font-size:.82rem;margin-top:40px}
+
+  @media(max-width:560px){
+    header.top{flex-direction:column;align-items:stretch;text-align:center}
+    .logo{justify-content:center}
+    .actions{justify-content:stretch}
+    .btn-generate,.btn-ghost{width:100%}
+    .btn-publish{width:100%;justify-content:center}
+  }
+</style>
+
+<div class="aurora"><div class="blob"></div></div>
+<div class="veil"></div>
+
+<div class="wrap">
+  <!-- ============ Header ============ -->
+  <header class="top">
+    <div class="logo">
+      <span class="mark">🎧</span>
+      <span class="name">VibeSync</span>
+    </div>
+    <div id="authArea">
+      <!-- Se rellena por JS: badge conectado o botón de conexión -->
+      <span class="badge" id="authBadge">Comprobando…</span>
+    </div>
+  </header>
+
+  <!-- ============ Hero ============ -->
+  <section class="hero">
+    <h1>Tu DJ predictivo</h1>
+    <p>Describe tu vibe y te monto la playlist perfecta, evitando lo comercial. 🔮</p>
+  </section>
+
+  <!-- ============ Caja de prompt ============ -->
+  <section class="card prompt-card">
+    <textarea id="prompt" placeholder="algo oscuro de trap latino para programar de noche…"></textarea>
+    <div class="chips" id="chips"><!-- chips inyectados por JS --></div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="previewBtn">✨ Previsualizar borrador</button>
+      <button class="btn btn-generate" id="createBtn">⚡ Crear ya</button>
+    </div>
+  </section>
+
+  <!-- ============ Loading ============ -->
+  <div class="loader" id="loader">
+    <div class="equalizer">
+      <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="status" id="loaderStatus">Analizando tu vibe…</div>
+  </div>
+
+  <!-- ============ Vista de BORRADOR editable ============ -->
+  <section id="draftView">
+    <div class="demo-note" id="draftDemoNote">Modo DEMO — no hay servidor VibeSync detectado, mostrando un borrador de ejemplo.</div>
+    <div class="draft-head">
+      <div class="d-title">
+        <div class="lbl">Borrador de playlist</div>
+        <div class="d-name" id="draftName">Tu borrador</div>
+      </div>
+      <div class="d-count" id="draftCount">0 temas</div>
+    </div>
+
+    <div class="not-found" id="notFound" style="display:none"></div>
+
+    <div class="track-list" id="trackList"><!-- tarjetas inyectadas por JS --></div>
+
+    <div class="search-add" id="searchAdd">
+      <input type="text" id="searchInput" placeholder="Busca una canción para añadir…"
+             autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false">
+      <div class="search-dropdown" id="searchDropdown" role="listbox"></div>
+    </div>
+
+    <div class="draft-confirm">
+      <button class="btn btn-publish" id="publishBtn">✅ Crear en Spotify (0)</button>
+    </div>
+
+    <div id="draftPublished"></div>
+    <div class="md" id="draftMd"></div>
+  </section>
+
+  <!-- ============ Resultado (Crear ya) ============ -->
+  <section id="result">
+    <div class="demo-note" id="demoNote">Modo DEMO — no hay servidor VibeSync detectado, mostrando datos de ejemplo.</div>
+    <div id="playlistCta"></div>
+    <div class="md" id="mdOut"></div>
+  </section>
+
+  <!-- ============ Historial ============ -->
+  <details class="history" id="history">
+    <summary><span>🗂️ Historial de playlists</span><span class="chev">▾</span></summary>
+    <div class="history-list" id="historyList">
+      <div class="history-empty">Cargando historial…</div>
+    </div>
+  </details>
+
+  <footer class="foot">VibeSync 🎧 — hecho con buen gusto musical y cero temas comerciales.</footer>
+</div>
+
+<script>
+"use strict";
+
+/* =========================================================
+   VibeSync — lógica del frontend
+   ========================================================= */
+
+// Chips de ejemplo que rellenan el textarea al hacer clic.
+const EJEMPLOS = [
+  "algo oscuro de trap latino para programar de noche",
+  "afrobeats underground para una cena con amigos",
+  "jazz-hop lo-fi lluvioso para leer",
+  "techno hipnótico de Berlín para concentrarme",
+];
+
+// Frases rotatorias del estado de carga.
+const FRASES_CARGA = [
+  "Analizando tu vibe…",
+  "Buscando underground…",
+  "Filtrando lo comercial…",
+  "Montando la playlist…",
+];
+
+// --- Referencias al DOM ---
+const $ = (s)=>document.querySelector(s);
+const authArea   = $("#authArea");
+const promptEl   = $("#prompt");
+const chipsEl    = $("#chips");
+const previewBtn = $("#previewBtn");
+const createBtn  = $("#createBtn");
+const loader     = $("#loader");
+const loaderTxt  = $("#loaderStatus");
+const resultEl   = $("#result");
+const mdOut      = $("#mdOut");
+const playlistCta= $("#playlistCta");
+const demoNote   = $("#demoNote");
+
+// Vista de borrador
+const draftView    = $("#draftView");
+const draftDemoNote= $("#draftDemoNote");
+const draftName    = $("#draftName");
+const draftCount   = $("#draftCount");
+const notFoundEl   = $("#notFound");
+const trackList    = $("#trackList");
+const searchAdd     = $("#searchAdd");
+const searchInput   = $("#searchInput");
+const searchDropdown= $("#searchDropdown");
+const publishBtn   = $("#publishBtn");
+const draftPublished = $("#draftPublished");
+const draftMd      = $("#draftMd");
+
+// Historial
+const historyEl    = $("#history");
+const historyList  = $("#historyList");
+
+let loadTimer = null;   // intervalo de rotación de frases
+let currentDraft = null; // {draft_id, name, tracks:[...], answer, demo:bool}
+let serverUp = false;    // true en cuanto /auth/status responde → el backend está vivo (no es demo)
+
+/* ---------- Utilidades ---------- */
+
+// Escapa HTML para evitar inyección / romper el layout.
+function escapeHtml(str){
+  return String(str)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+
+/* =========================================================
+   MINI-RENDERER DE MARKDOWN
+   Cubre: # / ## / ###, **negrita**, listas - y 1., --- (hr)
+   y tablas GitHub (| a | b | con fila de guiones).
+   Procesa línea a línea agrupando bloques.
+   ========================================================= */
+
+// Renderiza el "inline" de una línea (negrita, enlaces, código, escape).
+function mdInline(text){
+  let t = escapeHtml(text);
+  // **negrita**
+  t = t.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
+  // *cursiva* (simple, evita chocar con negrita ya resuelta)
+  t = t.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g,"$1<em>$2</em>");
+  // `código`
+  t = t.replace(/`([^`]+)`/g,'<code>$1</code>');
+  // [texto](url)
+  t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return t;
+}
+
+// Divide una fila de tabla "| a | b |" en celdas.
+function splitRow(line){
+  let s = line.trim();
+  if(s.startsWith("|")) s = s.slice(1);
+  if(s.endsWith("|"))   s = s.slice(0,-1);
+  return s.split("|").map(c=>c.trim());
+}
+
+// Detecta la fila separadora de tabla: |---|:--:|
+function isTableSep(line){
+  return /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(line) && line.includes("-");
+}
+
+function renderMarkdown(src){
+  const lines = String(src).replace(/\r\n?/g,"\n").split("\n");
+  let html = "";
+  let i = 0;
+
+  // Estado de lista en curso
+  let listType = null; // "ul" | "ol"
+  const closeList = ()=>{ if(listType){ html += `</${listType}>`; listType = null; } };
+
+  while(i < lines.length){
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // --- Línea en blanco ---
+    if(trimmed === ""){ closeList(); i++; continue; }
+
+    // --- Regla horizontal --- (--- o ***)
+    if(/^\s*([-*_])\1{2,}\s*$/.test(line)){ closeList(); html += "<hr>"; i++; continue; }
+
+    // --- Tabla GitHub: fila con | y siguiente fila separadora ---
+    if(trimmed.includes("|") && i+1 < lines.length && isTableSep(lines[i+1])){
+      closeList();
+      const header = splitRow(lines[i]);
+      i += 2; // saltamos cabecera + separador
+      let body = "";
+      while(i < lines.length && lines[i].trim().includes("|") && lines[i].trim() !== ""){
+        const cells = splitRow(lines[i]);
+        body += "<tr>" + cells.map(c=>`<td>${mdInline(c)}</td>`).join("") + "</tr>";
+        i++;
+      }
+      html += '<div class="tbl-wrap"><table><thead><tr>' +
+              header.map(h=>`<th>${mdInline(h)}</th>`).join("") +
+              "</tr></thead><tbody>" + body + "</tbody></table></div>";
+      continue;
+    }
+
+    // --- Títulos ---
+    const h = trimmed.match(/^(#{1,3})\s+(.*)$/);
+    if(h){ closeList(); const lvl = h[1].length; html += `<h${lvl}>${mdInline(h[2])}</h${lvl}>`; i++; continue; }
+
+    // --- Lista no ordenada ---
+    if(/^\s*[-*+]\s+/.test(line)){
+      if(listType !== "ul"){ closeList(); html += "<ul>"; listType = "ul"; }
+      html += `<li>${mdInline(trimmed.replace(/^[-*+]\s+/,""))}</li>`; i++; continue;
+    }
+
+    // --- Lista ordenada ---
+    if(/^\s*\d+[.)]\s+/.test(line)){
+      if(listType !== "ol"){ closeList(); html += "<ol>"; listType = "ol"; }
+      html += `<li>${mdInline(trimmed.replace(/^\d+[.)]\s+/,""))}</li>`; i++; continue;
+    }
+
+    // --- Párrafo normal ---
+    closeList();
+    html += `<p>${mdInline(trimmed)}</p>`;
+    i++;
+  }
+  closeList();
+  return html;
+}
+
+/* =========================================================
+   ESTADO DE AUTENTICACIÓN (Spotify)
+   ========================================================= */
+async function checkAuth(){
+  try{
+    const res = await fetch("/auth/status",{headers:{"Accept":"application/json"}});
+    serverUp = true; // el server respondió (aunque sea error) → está vivo, no es demo
+    if(!res.ok) throw new Error("bad status");
+    const data = await res.json();
+    if(data && data.logged_in){
+      renderConnected(data.display_name || "Spotify");
+    }else{
+      renderLoginButton();
+    }
+  }catch(err){
+    // Error de red / fuera del servidor → mostramos botón de conexión igualmente.
+    renderLoginButton();
+  }
+}
+
+function renderConnected(name){
+  authArea.innerHTML =
+    `<span class="badge connected"><span class="dot"></span>Conectado: ${escapeHtml(name)}</span>`;
+}
+
+function renderLoginButton(){
+  authArea.innerHTML = `<button class="btn" id="loginBtn">Conectar Spotify</button>`;
+  $("#loginBtn").addEventListener("click", doLogin);
+}
+
+async function doLogin(){
+  try{
+    const res = await fetch("/auth/login",{headers:{"Accept":"application/json"}});
+    if(!res.ok) throw new Error("bad login");
+    const data = await res.json();
+    if(data && data.authorize_url){
+      window.location.href = data.authorize_url;
+      return;
+    }
+    throw new Error("no url");
+  }catch(err){
+    // En demo/local no hay backend: avisamos sin romper.
+    alert("No se pudo iniciar sesión con Spotify (¿estás fuera del servidor VibeSync?).");
+  }
+}
+
+/* =========================================================
+   LOADER (compartido por ambos flujos)
+   ========================================================= */
+function startLoading(){
+  resultEl.classList.remove("on");
+  draftView.classList.remove("on");
+  loader.classList.add("on");
+  previewBtn.disabled = true;
+  createBtn.disabled = true;
+  let idx = 0;
+  loaderTxt.textContent = FRASES_CARGA[0];
+  loadTimer = setInterval(()=>{
+    idx = (idx+1) % FRASES_CARGA.length;
+    loaderTxt.textContent = FRASES_CARGA[idx];
+  }, 1400);
+}
+
+function stopLoading(){
+  loader.classList.remove("on");
+  previewBtn.disabled = false;
+  createBtn.disabled = false;
+  if(loadTimer){ clearInterval(loadTimer); loadTimer = null; }
+}
+
+/* =========================================================
+   FLUJO "CREAR YA" (POST /dj/create) — card de playlist directa
+   ========================================================= */
+function renderResult(data, isDemo){
+  demoNote.classList.toggle("on", !!isDemo);
+
+  // Tarjeta destacada de playlist si hay URL.
+  if(data.playlist_url){
+    const name = escapeHtml(data.playlist_name || "Tu playlist");
+    const added = Number(data.added || 0);
+    playlistCta.innerHTML = `
+      <div class="playlist-cta">
+        <div class="pl-info">
+          <div class="lbl">Playlist creada</div>
+          <div class="pl-name">${name}</div>
+          <div class="pl-meta">${added} ${added===1?"tema añadido":"temas añadidos"}</div>
+        </div>
+        <a class="btn" href="${escapeHtml(data.playlist_url)}" target="_blank" rel="noopener">
+          ▶ Abrir '${name}' en Spotify (${added})
+        </a>
+      </div>`;
+  }else{
+    playlistCta.innerHTML = "";
+  }
+
+  mdOut.innerHTML = renderMarkdown(data.answer || "");
+  resultEl.classList.add("on");
+  resultEl.scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+async function createNow(){
+  const message = promptEl.value.trim();
+  if(!message){ promptEl.focus(); return; }
+  startLoading();
+
+  try{
+    const res = await fetch("/dj/create",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body: JSON.stringify({message})
+    });
+    if(!res.ok) throw new Error("bad response");
+    const data = await res.json();
+    stopLoading();
+    renderResult(data, false);
+    loadHistory();
+  }catch(err){
+    stopLoading();
+    if(serverUp){ toast("Error al crear la playlist: " + (err.message || err)); }
+    else { renderResult(buildDemoCreate(message), true); }  // solo demo si NO hay server
+  }
+}
+
+/* =========================================================
+   FLUJO "BORRADOR" (POST /dj/draft) — tarjetas editables
+   ========================================================= */
+async function previewDraft(){
+  const message = promptEl.value.trim();
+  if(!message){ promptEl.focus(); return; }
+  startLoading();
+
+  try{
+    const res = await fetch("/dj/draft",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body: JSON.stringify({message})
+    });
+    if(!res.ok) throw new Error("bad response");
+    const data = await res.json();
+    stopLoading();
+    setDraft(data, false);
+  }catch(err){
+    stopLoading();
+    if(serverUp){ toast("Error al generar el borrador: " + (err.message || err)); }
+    else { setDraft(buildDemoDraft(message), true); }  // solo demo si NO hay server
+  }
+}
+
+// Guarda el borrador en memoria y lo pinta.
+function setDraft(data, isDemo){
+  currentDraft = {
+    draft_id: data.draft_id,
+    name: data.name || "Tu borrador",
+    tracks: Array.isArray(data.tracks) ? data.tracks.slice() : [],
+    not_found: Array.isArray(data.not_found) ? data.not_found.slice() : [],
+    answer: data.answer || "",
+    url: data.url || null,
+    demo: !!isDemo,
+  };
+  // Limpia el buscador al cambiar de borrador.
+  if(searchInput){ searchInput.value = ""; closeSearch(); }
+  renderDraft();
+  draftView.classList.add("on");
+  draftView.scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+// Pinta la cabecera, tarjetas, not_found, answer y estado del botón publicar.
+function renderDraft(){
+  if(!currentDraft) return;
+  draftDemoNote.classList.toggle("on", !!currentDraft.demo);
+
+  draftName.textContent = currentDraft.name;
+  const n = currentDraft.tracks.length;
+  draftCount.textContent = `${n} ${n===1?"tema":"temas"}`;
+
+  // Temas no encontrados (avisos)
+  if(currentDraft.not_found && currentDraft.not_found.length){
+    const items = currentDraft.not_found.map(x=>{
+      const label = typeof x === "string"
+        ? x
+        : [x.artist, x.title].filter(Boolean).join(" - ") || JSON.stringify(x);
+      return escapeHtml(label);
+    });
+    notFoundEl.innerHTML = `<b>No encontrados en Spotify:</b> ${items.join(" · ")}`;
+    notFoundEl.style.display = "block";
+  }else{
+    notFoundEl.style.display = "none";
+    notFoundEl.innerHTML = "";
+  }
+
+  renderTracks();
+
+  // Botón publicar
+  const alreadyPublished = !!currentDraft.url;
+  publishBtn.textContent = `✅ Crear en Spotify (${n})`;
+  publishBtn.disabled = n === 0 || alreadyPublished;
+
+  // Si ya está publicado, mostramos la CTA.
+  if(alreadyPublished){
+    renderPublished(currentDraft.url, n, currentDraft.name);
+  }else{
+    draftPublished.innerHTML = "";
+  }
+
+  // Explicación (markdown) aparte.
+  draftMd.innerHTML = currentDraft.answer ? renderMarkdown(currentDraft.answer) : "";
+  draftMd.style.display = currentDraft.answer ? "block" : "none";
+}
+
+// Pinta solo la lista de tarjetas de track.
+function renderTracks(){
+  trackList.innerHTML = "";
+  if(!currentDraft.tracks.length){
+    trackList.innerHTML = `<div class="history-empty">Sin temas. Añade alguno abajo o previsualiza otro borrador.</div>`;
+    return;
+  }
+  currentDraft.tracks.forEach((track, idx)=>{
+    trackList.appendChild(buildTrackCard(track, idx));
+  });
+}
+
+// Construye una tarjeta de track con carátula, info y acciones.
+function buildTrackCard(track, idx){
+  const uri = track.uri || `local:${idx}`;
+  const card = document.createElement("div");
+  card.className = "track-card";
+  card.dataset.uri = uri;
+
+  // Carátula (o placeholder con emoji de disco).
+  const cover = document.createElement("div");
+  cover.className = "track-cover";
+  if(track.cover_url){
+    const img = document.createElement("img");
+    img.src = track.cover_url;
+    img.alt = "";
+    img.loading = "lazy";
+    // Si la imagen falla, dejamos el placeholder.
+    img.addEventListener("error", ()=>{ cover.innerHTML = "💿"; });
+    cover.appendChild(img);
+  }else{
+    cover.textContent = "💿";
+  }
+
+  // Info
+  const info = document.createElement("div");
+  info.className = "track-info";
+  const title = document.createElement("div");
+  title.className = "t-title";
+  title.textContent = track.title || "Sin título";
+  const artist = document.createElement("div");
+  artist.className = "t-artist";
+  artist.textContent = track.artist || "Artista desconocido";
+  info.appendChild(title);
+  info.appendChild(artist);
+
+  // Handle de arrastrar (drag&drop nativo activado desde el handle).
+  const handle = document.createElement("div");
+  handle.className = "drag-handle";
+  handle.title = "Arrastra para reordenar";
+  handle.textContent = "⠿";
+  handle.setAttribute("aria-label","Reordenar");
+
+  // Botón quitar
+  const remove = document.createElement("button");
+  remove.className = "track-remove";
+  remove.type = "button";
+  remove.title = "Quitar del borrador";
+  remove.setAttribute("aria-label","Quitar");
+  remove.textContent = "✕";
+  remove.addEventListener("click", ()=> removeTrack(uri));
+
+  card.appendChild(handle);
+  card.appendChild(cover);
+  card.appendChild(info);
+  card.appendChild(remove);
+
+  wireDrag(card, handle);
+  return card;
+}
+
+/* ---------- Drag & drop nativo para REORDENAR ---------- */
+let draggingCard = null;
+
+function wireDrag(card, handle){
+  // Solo permitimos arrastrar cuando se agarra el handle.
+  handle.addEventListener("mousedown", ()=>{ card.draggable = true; });
+  handle.addEventListener("touchstart", ()=>{ card.draggable = true; }, {passive:true});
+
+  card.addEventListener("dragstart", (e)=>{
+    draggingCard = card;
+    card.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    try{ e.dataTransfer.setData("text/plain", card.dataset.uri || ""); }catch(_){}
+  });
+
+  card.addEventListener("dragend", ()=>{
+    card.classList.remove("dragging");
+    card.draggable = false;
+    draggingCard = null;
+    // Nuevo orden según el DOM → PATCH reorder.
+    commitReorder();
+  });
+}
+
+// Determina tras qué tarjeta insertar según la posición vertical del cursor.
+function getDragAfterElement(y){
+  const cards = [...trackList.querySelectorAll(".track-card:not(.dragging)")];
+  let closest = {offset:-Infinity, el:null};
+  for(const el of cards){
+    const box = el.getBoundingClientRect();
+    const offset = y - box.top - box.height/2;
+    if(offset < 0 && offset > closest.offset){
+      closest = {offset, el};
+    }
+  }
+  return closest.el;
+}
+
+trackList.addEventListener("dragover", (e)=>{
+  if(!draggingCard) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  const after = getDragAfterElement(e.clientY);
+  if(after == null){
+    trackList.appendChild(draggingCard);
+  }else{
+    trackList.insertBefore(draggingCard, after);
+  }
+});
+
+// Lee el orden del DOM, actualiza estado y hace PATCH si cambió.
+function commitReorder(){
+  if(!currentDraft) return;
+  const domUris = [...trackList.querySelectorAll(".track-card")].map(c=>c.dataset.uri);
+  const oldUris = currentDraft.tracks.map(t=>t.uri);
+  const changed = domUris.length === oldUris.length && domUris.some((u,i)=>u !== oldUris[i]);
+  if(!changed) return;
+  // Reordenamos el array local según el DOM.
+  const byUri = new Map(currentDraft.tracks.map(t=>[t.uri, t]));
+  currentDraft.tracks = domUris.map(u=>byUri.get(u)).filter(Boolean);
+  patchDraft({reorder: domUris});
+}
+
+/* ---------- Acciones de edición (PATCH) ---------- */
+function removeTrack(uri){
+  if(!currentDraft) return;
+  patchDraft({remove:[uri]});
+}
+
+// Añade por texto libre "Artista - Título" (modo demo / sin server / fallback).
+function addTrackFreeText(){
+  if(!currentDraft){
+    // Sin borrador activo aún: pedir previsualizar primero.
+    searchInput.focus();
+    return;
+  }
+  const raw = searchInput.value.trim();
+  if(!raw) return;
+  // Formato "Artista - Título"; si no hay guion, todo va a título.
+  let artist = "", title = raw;
+  const dash = raw.indexOf(" - ");
+  if(dash !== -1){
+    artist = raw.slice(0, dash).trim();
+    title  = raw.slice(dash + 3).trim();
+  }
+  searchInput.value = "";
+  closeSearch();
+  patchDraft({add:[{artist, title}]});
+}
+
+/* =========================================================
+   BUSCADOR EN VIVO DE SPOTIFY (GET /search/tracks)
+   Debounce, teclado (↑/↓/Enter/Esc), carátula real.
+   Solo con server vivo y borrador no-demo; si no, texto libre.
+   ========================================================= */
+let searchTimer = null;      // debounce
+let searchResults = [];      // resultados actuales
+let searchActiveIdx = -1;    // fila resaltada por teclado
+let searchSeq = 0;           // descarta respuestas obsoletas
+
+// El buscador real solo funciona con server vivo y borrador no-demo.
+function isSearchLive(){
+  return serverUp && !!currentDraft && !currentDraft.demo;
+}
+
+function openSearch(){
+  searchDropdown.classList.add("on");
+  searchInput.setAttribute("aria-expanded","true");
+}
+function closeSearch(){
+  searchDropdown.classList.remove("on");
+  searchDropdown.innerHTML = "";
+  searchResults = [];
+  searchActiveIdx = -1;
+  searchInput.setAttribute("aria-expanded","false");
+}
+
+// Estado sutil ("Buscando…", "Sin resultados", avisos de demo).
+function showSearchState(msg){
+  searchResults = [];
+  searchActiveIdx = -1;
+  searchDropdown.innerHTML = "";
+  const s = document.createElement("div");
+  s.className = "search-state";
+  s.textContent = msg;
+  searchDropdown.appendChild(s);
+  openSearch();
+}
+
+// Handler de "input": debounce + mínimo 2 caracteres.
+function onSearchInput(){
+  const q = searchInput.value.trim();
+  clearTimeout(searchTimer);
+
+  if(!currentDraft){ closeSearch(); return; }
+
+  // Modo demo / sin server: no llamamos al endpoint.
+  if(!isSearchLive()){
+    if(q.length >= 1){
+      showSearchState("Buscador en vivo solo disponible con servidor. Pulsa Enter para añadir el texto.");
+    }else{
+      closeSearch();
+    }
+    return;
+  }
+
+  if(q.length < 2){ closeSearch(); return; }
+  showSearchState("Buscando…");
+  searchTimer = setTimeout(()=> runSearch(q), 250);
+}
+
+// Lanza la búsqueda real contra el backend.
+async function runSearch(q){
+  const seq = ++searchSeq;
+  try{
+    const res = await fetch("/search/tracks?q=" + encodeURIComponent(q) + "&limit=8",
+      {headers:{"Accept":"application/json"}});
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if(seq !== searchSeq) return;              // respuesta obsoleta → descartar
+    renderSearchResults(Array.isArray(data.tracks) ? data.tracks : []);
+  }catch(err){
+    if(seq !== searchSeq) return;
+    showSearchState("No se pudo buscar. Pulsa Enter para añadir como texto.");
+  }
+}
+
+function renderSearchResults(tracks){
+  searchResults = tracks;
+  searchActiveIdx = -1;
+  searchDropdown.innerHTML = "";
+  if(!tracks.length){ showSearchState("Sin resultados."); return; }
+  tracks.forEach((r, idx)=> searchDropdown.appendChild(buildSearchRow(r, idx)));
+  openSearch();
+}
+
+// Fila de resultado: miniatura + "artista · título" (todo escapado vía textContent).
+function buildSearchRow(r, idx){
+  const row = document.createElement("div");
+  row.className = "search-result";
+  row.setAttribute("role","option");
+  row.dataset.idx = String(idx);
+
+  const thumb = document.createElement("div");
+  thumb.className = "search-thumb";
+  if(r.cover_url){
+    const img = document.createElement("img");
+    img.src = r.cover_url; img.alt = ""; img.loading = "lazy";
+    img.addEventListener("error", ()=>{ thumb.innerHTML = "💿"; });
+    thumb.appendChild(img);
+  }else{
+    thumb.textContent = "💿";
+  }
+
+  const info = document.createElement("div");
+  info.className = "search-res-info";
+  const a = document.createElement("span"); a.className = "sr-artist"; a.textContent = r.artist || "Artista";
+  const sep = document.createElement("span"); sep.className = "sr-sep"; sep.textContent = "·";
+  const t = document.createElement("span"); t.className = "sr-title"; t.textContent = r.name || "Sin título";
+  info.appendChild(a); info.appendChild(sep); info.appendChild(t);
+
+  row.appendChild(thumb);
+  row.appendChild(info);
+
+  // mousedown (no click) para no perder el foco antes de procesar.
+  row.addEventListener("mousedown", (e)=>{ e.preventDefault(); pickSearchResult(idx); });
+  row.addEventListener("mouseenter", ()=> setActiveResult(idx));
+  return row;
+}
+
+function setActiveResult(idx){
+  searchActiveIdx = idx;
+  const rows = searchDropdown.querySelectorAll(".search-result");
+  rows.forEach(el=> el.classList.toggle("active", Number(el.dataset.idx) === idx));
+}
+
+function scrollActiveIntoView(){
+  const el = searchDropdown.querySelector(".search-result.active");
+  if(el) el.scrollIntoView({block:"nearest"});
+}
+
+// Añade el track ya resuelto (con uri → el backend NO re-busca).
+function pickSearchResult(idx){
+  const r = searchResults[idx];
+  if(!r) return;
+  searchInput.value = "";
+  closeSearch();
+  patchDraft({add:[{artist:r.artist, title:r.name, uri:r.uri, cover_url:r.cover_url}]});
+}
+
+// Navegación por teclado en la caja de búsqueda.
+function onSearchKeydown(e){
+  const open = searchDropdown.classList.contains("on");
+  if(e.key === "ArrowDown"){
+    if(!open || !searchResults.length) return;
+    e.preventDefault();
+    setActiveResult((searchActiveIdx + 1) % searchResults.length);
+    scrollActiveIntoView();
+  }else if(e.key === "ArrowUp"){
+    if(!open || !searchResults.length) return;
+    e.preventDefault();
+    setActiveResult((searchActiveIdx - 1 + searchResults.length) % searchResults.length);
+    scrollActiveIntoView();
+  }else if(e.key === "Enter"){
+    e.preventDefault();
+    if(isSearchLive() && searchResults.length){
+      // Añade el resaltado (o el primero si no hay ninguno resaltado).
+      pickSearchResult(searchActiveIdx >= 0 ? searchActiveIdx : 0);
+    }else{
+      // Demo / sin server / sin resultados → texto libre.
+      addTrackFreeText();
+    }
+  }else if(e.key === "Escape"){
+    closeSearch();
+  }
+}
+
+// Aplica ops localmente sobre un array de tracks (para demo y fallback).
+function applyOpsLocal(tracks, ops){
+  let t = tracks.slice();
+  if(ops.remove && ops.remove.length){
+    t = t.filter(tr => !ops.remove.includes(tr.uri));
+  }
+  if(ops.add && ops.add.length){
+    ops.add.forEach(a=>{
+      t.push({
+        artist: a.artist || "",
+        title: a.title || "",
+        uri: "local:" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+        cover_url: "",
+      });
+    });
+  }
+  if(ops.reorder && ops.reorder.length){
+    const byUri = new Map(t.map(tr=>[tr.uri, tr]));
+    const reordered = ops.reorder.map(u=>byUri.get(u)).filter(Boolean);
+    // Anexar los que no estuvieran en el reorder (por robustez).
+    t.forEach(tr=>{ if(!ops.reorder.includes(tr.uri)) reordered.push(tr); });
+    t = reordered;
+  }
+  return t;
+}
+
+// Aviso flotante (no bloqueante) para errores reales del servidor.
+function toast(msg){
+  let el = document.getElementById("vsToast");
+  if(!el){
+    el = document.createElement("div");
+    el.id = "vsToast";
+    el.style.cssText = "position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:9999;"
+      + "max-width:90vw;padding:12px 18px;border-radius:12px;background:rgba(20,10,30,.92);color:#fff;"
+      + "font-size:.9rem;border:1px solid rgba(236,72,153,.5);box-shadow:0 8px 30px rgba(0,0,0,.4);"
+      + "backdrop-filter:blur(8px);opacity:0;transition:opacity .25s";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = "1";
+  clearTimeout(el._t);
+  el._t = setTimeout(()=>{ el.style.opacity = "0"; }, 4200);
+}
+
+// Resincroniza el borrador con el estado real del servidor (revierte cambios locales fallidos).
+async function reloadCurrentDraft(){
+  if(!currentDraft || currentDraft.demo || !currentDraft.draft_id) return;
+  try{
+    const res = await fetch(`/dj/draft/${encodeURIComponent(currentDraft.draft_id)}`,{headers:{"Accept":"application/json"}});
+    if(!res.ok) return;
+    const d = await res.json();
+    if(Array.isArray(d.tracks)) currentDraft.tracks = d.tracks;
+    renderDraft();
+  }catch(_){}
+}
+
+// Edición estructurada del borrador. En demo/fallback opera en local.
+async function patchDraft(ops){
+  if(!currentDraft) return;
+
+  // Modo demo: sin backend, aplicamos en local y re-render.
+  if(currentDraft.demo){
+    currentDraft.tracks = applyOpsLocal(currentDraft.tracks, ops);
+    renderDraft();
+    return;
+  }
+
+  try{
+    const res = await fetch(`/dj/draft/${encodeURIComponent(currentDraft.draft_id)}`,{
+      method:"PATCH",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body: JSON.stringify(ops)
+    });
+    if(!res.ok){
+      const detail = await res.text().catch(()=> "");
+      throw new Error("HTTP " + res.status + (detail ? " – " + detail.slice(0,140) : ""));
+    }
+    const data = await res.json();
+    if(Array.isArray(data.tracks)) currentDraft.tracks = data.tracks;
+    if(data.draft_id) currentDraft.draft_id = data.draft_id;
+    renderDraft();
+  }catch(err){
+    if(serverUp && !currentDraft.demo){
+      // El server está vivo: error puntual, NO demo. Avisamos y resincronizamos.
+      toast("No se pudo editar: " + (err.message || err));
+      await reloadCurrentDraft();
+    }else{
+      currentDraft.demo = true;
+      currentDraft.tracks = applyOpsLocal(currentDraft.tracks, ops);
+      renderDraft();
+    }
+  }
+}
+
+/* ---------- Publicar borrador ---------- */
+async function publishDraft(){
+  if(!currentDraft || !currentDraft.tracks.length) return;
+  const n = currentDraft.tracks.length;
+
+  // Loading inline en el botón.
+  publishBtn.disabled = true;
+  const prevTxt = publishBtn.textContent;
+  publishBtn.textContent = "⏳ Creando en Spotify…";
+
+  if(currentDraft.demo){
+    // Demo: fingimos publicación con una URL de ejemplo.
+    const url = "https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd";
+    currentDraft.url = url;
+    renderPublished(url, n, currentDraft.name);
+    publishBtn.textContent = prevTxt;
+    renderDraft();
+    loadHistory();
+    return;
+  }
+
+  try{
+    const res = await fetch(`/dj/draft/${encodeURIComponent(currentDraft.draft_id)}/publish`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+    });
+    if(!res.ok) throw new Error("bad publish");
+    const data = await res.json();
+    const url = data.url || "";
+    const added = Number(data.added != null ? data.added : n);
+    currentDraft.url = url;
+    renderPublished(url, added, currentDraft.name);
+    renderDraft();
+    loadHistory();
+  }catch(err){
+    if(serverUp && !currentDraft.demo){
+      toast("No se pudo publicar en Spotify: " + (err.message || err));
+    }else{
+      const url = "https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd";
+      currentDraft.demo = true;
+      currentDraft.url = url;
+      renderPublished(url, n, currentDraft.name);
+      renderDraft();
+    }
+  }finally{
+    publishBtn.textContent = prevTxt;
+  }
+}
+
+// Pinta la CTA destacada "Abrir en Spotify".
+function renderPublished(url, added, name){
+  const safeName = escapeHtml(name || "Tu playlist");
+  const cnt = Number(added || 0);
+  draftPublished.innerHTML = `
+    <div class="playlist-cta">
+      <div class="pl-info">
+        <div class="lbl">Publicada en Spotify</div>
+        <div class="pl-name">${safeName}</div>
+        <div class="pl-meta">${cnt} ${cnt===1?"tema añadido":"temas añadidos"}</div>
+      </div>
+      <a class="btn" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+        ▶ Abrir en Spotify (${cnt})
+      </a>
+    </div>`;
+  draftPublished.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+
+/* =========================================================
+   HISTORIAL (GET /dj/drafts, GET /dj/draft/{id})
+   ========================================================= */
+async function loadHistory(){
+  try{
+    const res = await fetch("/dj/drafts",{headers:{"Accept":"application/json"}});
+    if(!res.ok) throw new Error("bad drafts");
+    const data = await res.json();
+    renderHistory(Array.isArray(data.drafts) ? data.drafts : [], false);
+  }catch(err){
+    renderHistory(buildDemoHistory(), true);
+  }
+}
+
+function renderHistory(drafts, isDemo){
+  historyList.innerHTML = "";
+  if(!drafts.length){
+    historyList.innerHTML = `<div class="history-empty">Aún no hay playlists. ¡Crea tu primer borrador! ✨</div>`;
+    return;
+  }
+  drafts.forEach(d=>{
+    const item = document.createElement("button");
+    item.className = "history-item";
+    item.type = "button";
+
+    const status = (d.status || "draft").toLowerCase();
+    const isPub = status === "published" || !!d.url;
+    const count = Number(d.count || 0);
+    const dateTxt = fmtDate(d.created_at);
+
+    const main = document.createElement("div");
+    main.className = "hi-main";
+    const nm = document.createElement("div");
+    nm.className = "hi-name";
+    nm.textContent = d.name || d.prompt || "Borrador";
+    const meta = document.createElement("div");
+    meta.className = "hi-meta";
+    meta.textContent = `${count} ${count===1?"tema":"temas"}${dateTxt?" · "+dateTxt:""}`;
+    main.appendChild(nm);
+    main.appendChild(meta);
+
+    const pill = document.createElement("span");
+    pill.className = "status-pill " + (isPub ? "published" : "draft");
+    pill.textContent = isPub ? "Publicada" : "Borrador";
+
+    item.appendChild(main);
+    item.appendChild(pill);
+
+    // Enlace directo a Spotify si está publicada.
+    if(isPub && d.url){
+      const a = document.createElement("a");
+      a.className = "hi-open";
+      a.href = d.url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "▶ Spotify";
+      // Evita que el click en el enlace dispare la carga del borrador.
+      a.addEventListener("click", (e)=> e.stopPropagation());
+      item.appendChild(a);
+    }
+
+    // Click en la fila → cargar sus tarjetas.
+    item.addEventListener("click", ()=> openDraft(d.draft_id, isDemo ? d : null));
+    historyList.appendChild(item);
+  });
+}
+
+// Carga un borrador por id y muestra sus tarjetas.
+async function openDraft(id, demoFallback){
+  if(id == null){ return; }
+  startLoading();
+  try{
+    const res = await fetch(`/dj/draft/${encodeURIComponent(id)}`,{headers:{"Accept":"application/json"}});
+    if(!res.ok) throw new Error("bad draft");
+    const data = await res.json();
+    stopLoading();
+    setDraft(data, false);
+  }catch(err){
+    stopLoading();
+    // Fallback demo: reconstruimos un borrador de ejemplo desde la fila del historial.
+    setDraft(demoFallback ? demoDraftFromHistory(demoFallback) : buildDemoDraft(""), true);
+  }
+}
+
+// Formatea una fecha ISO / timestamp a algo legible; tolera valores raros.
+function fmtDate(v){
+  if(!v) return "";
+  try{
+    const d = new Date(v);
+    if(isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString(undefined,{day:"2-digit",month:"short",year:"numeric"});
+  }catch(_){ return String(v); }
+}
+
+/* =========================================================
+   DATOS DEMO (canned) — se usan si los fetch fallan.
+   ========================================================= */
+
+// Portadas placeholder (gradientes en data-URI, sin red externa).
+function demoCover(a,b){
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'>`+
+    `<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>`+
+    `<stop offset='0' stop-color='${a}'/><stop offset='1' stop-color='${b}'/>`+
+    `</linearGradient></defs><rect width='120' height='120' rx='14' fill='url(#g)'/>`+
+    `<text x='50%' y='56%' font-size='46' text-anchor='middle' fill='rgba(255,255,255,.85)'>♪</text></svg>`;
+  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+}
+
+// Demo del flujo "Crear ya".
+function buildDemoCreate(message){
+  const vibe = message ? `"${message}"` : "tu vibe";
+  const answer =
+`## 🎧 Tu sesión underground
+
+He captado ${escapeHtml(vibe)} y he montado algo **oscuro, hipnótico y nada comercial**. Cero radio-fórmula, todo joyas de nicho.
+
+**Mood:** nocturno · **Energía:** media-alta · **Comercialidad:** filtrada al mínimo
+
+---
+
+### Tracklist
+
+| # | Tema | Artista | Género | BPM |
+|---|------|---------|--------|-----|
+| 1 | Neón Sucio | La Zona Fantasma | trap latino | 132 |
+| 2 | Madrugada 3am | Kaydy Cain b2b | drill melódico | 140 |
+| 3 | Humo Violeta | Chico Blanco | reggaetón alt | 96 |
+| 4 | Ruido de Fondo | Bxrber | trap experimental | 128 |
+| 5 | Sótano | El Bloque | hip-hop underground | 88 |
+| 6 | Aurora Baja | Ralphie Choo | R&B glitch | 110 |
+
+---
+
+### Por qué esta selección
+- **Underground real**: artistas con menos de 200k oyentes mensuales.
+- **Transiciones cuidadas**: BPMs pensados para fluir sin cortes bruscos.
+- **Anti-mainstream**: nada de top 50 ni virales de TikTok.
+
+> Dale a *play* y a programar. 🌙`;
+
+  return {
+    answer,
+    playlist_url:"https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd",
+    playlist_name:"VibeSync · Underground Nocturno",
+    added:6
+  };
+}
+
+// Demo del flujo "Borrador".
+function buildDemoDraft(message){
+  const vibe = message ? `"${escapeHtml(message)}"` : "tu vibe";
+  const tracks = [
+    {artist:"La Zona Fantasma", title:"Neón Sucio",    uri:"demo:track:1", cover_url:demoCover("#7C3AED","#EC4899")},
+    {artist:"Chico Blanco",     title:"Humo Violeta",  uri:"demo:track:2", cover_url:demoCover("#EC4899","#1DB954")},
+    {artist:"Bxrber",           title:"Ruido de Fondo",uri:"demo:track:3", cover_url:demoCover("#1DB954","#7C3AED")},
+    {artist:"El Bloque",        title:"Sótano",        uri:"demo:track:4", cover_url:""},
+    {artist:"Ralphie Choo",     title:"Aurora Baja",   uri:"demo:track:5", cover_url:demoCover("#F59E0B","#EC4899")},
+  ];
+  const answer =
+`## 🎧 Borrador listo para retocar
+
+He captado ${vibe} y te he preparado un **borrador editable**: quita lo que no encaje, arrastra para reordenar y añade tus propias joyas antes de crearla en Spotify.
+
+**Mood:** nocturno · **Energía:** media-alta · **Comercialidad:** filtrada al mínimo
+
+> Cuando te guste, pulsa **✅ Crear en Spotify**. 🌙`;
+
+  return {
+    draft_id: "demo-" + Date.now().toString(36),
+    name: "VibeSync · Underground Nocturno",
+    tracks,
+    not_found: [{artist:"Artista Fantasma", title:"Tema Inexistente"}],
+    answer,
+  };
+}
+
+// Historial demo.
+function buildDemoHistory(){
+  const now = Date.now();
+  return [
+    {draft_id:"demo-h1", name:"VibeSync · Underground Nocturno", status:"published", count:5,
+     url:"https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd",
+     prompt:"trap latino oscuro para programar", created_at:new Date(now-86400000).toISOString()},
+    {draft_id:"demo-h2", name:"Afrobeats para cenar", status:"draft", count:8, url:null,
+     prompt:"afrobeats underground para una cena", created_at:new Date(now-3*86400000).toISOString()},
+    {draft_id:"demo-h3", name:"Lo-fi lluvioso", status:"published", count:12,
+     url:"https://open.spotify.com/playlist/37i9dQZF1DX8Uebhn9wzrS",
+     prompt:"jazz-hop lo-fi para leer", created_at:new Date(now-7*86400000).toISOString()},
+  ];
+}
+
+// Reconstruye un borrador demo a partir de una fila del historial demo.
+function demoDraftFromHistory(row){
+  const base = buildDemoDraft(row.prompt || row.name || "");
+  base.draft_id = row.draft_id;
+  base.name = row.name || base.name;
+  base.url = row.url || null;
+  base.not_found = [];
+  return base;
+}
+
+/* =========================================================
+   INICIALIZACIÓN
+   ========================================================= */
+function renderChips(list){
+  chipsEl.innerHTML = "";
+  list.forEach(txt=>{
+    const c = document.createElement("button");
+    c.type = "button";
+    c.className = "chip";
+    c.textContent = txt;
+    c.addEventListener("click", ()=>{ promptEl.value = txt; promptEl.focus(); });
+    chipsEl.appendChild(c);
+  });
+}
+
+async function initChips(){
+  renderChips(EJEMPLOS);              // defaults al instante (sin espera)
+  try{
+    const res = await fetch("/suggestions",{headers:{"Accept":"application/json"}});
+    if(!res.ok) return;
+    const data = await res.json();
+    if(Array.isArray(data.chips) && data.chips.length) renderChips(data.chips);  // las de DeepSeek
+  }catch(_){/* sin server: se quedan los defaults */}
+}
+
+function init(){
+  initChips();
+  previewBtn.addEventListener("click", previewDraft);
+  createBtn.addEventListener("click", createNow);
+  publishBtn.addEventListener("click", publishDraft);
+  // Buscador en vivo de Spotify.
+  searchInput.addEventListener("input", onSearchInput);
+  searchInput.addEventListener("keydown", onSearchKeydown);
+  searchInput.addEventListener("focus", ()=>{ if(searchResults.length) openSearch(); });
+  // Click fuera del buscador → cierra el dropdown.
+  document.addEventListener("click",(e)=>{ if(searchAdd && !searchAdd.contains(e.target)) closeSearch(); });
+  // Ctrl/Cmd+Enter en el textarea → previsualiza borrador.
+  promptEl.addEventListener("keydown",(e)=>{
+    if((e.ctrlKey||e.metaKey) && e.key==="Enter"){ e.preventDefault(); previewDraft(); }
+  });
+  checkAuth();
+  loadHistory();
+}
+
+document.addEventListener("DOMContentLoaded", init);
+</script>

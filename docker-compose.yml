@@ -1,0 +1,19 @@
+# Mongo local con Vector Search ($vectorSearch) SIN Atlas cloud.
+# La imagen oficial "mongodb-atlas-local" arranca mongod + mongot y auto-inicializa
+# un single-node replica set (necesario para transacciones y para el índice vectorial).
+services:
+  mongodb:
+    image: mongodb/mongodb-atlas-local:latest
+    container_name: vibesync-mongo
+    ports:
+      - "27020:27017"   # 27017 ocupado por el Mongo del sistema; usamos 27020
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mongodata:
